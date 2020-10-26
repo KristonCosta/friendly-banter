@@ -1,0 +1,2 @@
+(this["webpackJsonpreact-client"]=this["webpackJsonpreact-client"]||[]).push([[0],[function(t,r,e){"use strict";e.r(r),Promise.all([e.e(2),e.e(3)]).then(e.bind(null,1)).catch((function(t){return console.error("Error importing `bootstrap.tsx`:",t)}))}],[[0,1]]]);
+//# sourceMappingURL=main.3d12f1c0.chunk.js.map

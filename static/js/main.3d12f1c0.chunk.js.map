@@ -1,0 +1,1 @@
+{"version":3,"sources":["index.tsx"],"names":["catch","e","console","error"],"mappings":"gHAAA,OAEA,kDACGA,OAAM,SAAAC,GAAC,OAAIC,QAAQC,MAAM,mCAAoCF,Q","file":"static/js/main.3d12f1c0.chunk.js","sourcesContent":["export {} \n\nimport(\"./bootstrap\")\n  .catch(e => console.error(\"Error importing `bootstrap.tsx`:\", e));"],"sourceRoot":""}
