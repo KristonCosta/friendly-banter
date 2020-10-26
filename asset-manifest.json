@@ -2,14 +2,14 @@
   "files": {
     "main.js": "/friendly-banter/static/js/main.3d12f1c0.chunk.js",
     "main.js.map": "/friendly-banter/static/js/main.3d12f1c0.chunk.js.map",
-    "runtime-main.js": "/friendly-banter/static/js/runtime-main.812c6de5.js",
-    "runtime-main.js.map": "/friendly-banter/static/js/runtime-main.812c6de5.js.map",
+    "runtime-main.js": "/friendly-banter/static/js/runtime-main.1396ff6d.js",
+    "runtime-main.js.map": "/friendly-banter/static/js/runtime-main.1396ff6d.js.map",
     "static/js/2.c4338dc3.chunk.js": "/friendly-banter/static/js/2.c4338dc3.chunk.js",
     "static/js/2.c4338dc3.chunk.js.map": "/friendly-banter/static/js/2.c4338dc3.chunk.js.map",
     "static/css/3.ab7136cd.chunk.css": "/friendly-banter/static/css/3.ab7136cd.chunk.css",
-    "static/js/3.c4e81913.chunk.js": "/friendly-banter/static/js/3.c4e81913.chunk.js",
-    "9c01bc4eb59f0ffbb592.module.wasm": "/friendly-banter/9c01bc4eb59f0ffbb592.module.wasm",
-    "static/js/3.c4e81913.chunk.js.map": "/friendly-banter/static/js/3.c4e81913.chunk.js.map",
+    "static/js/3.13698158.chunk.js": "/friendly-banter/static/js/3.13698158.chunk.js",
+    "06e53ba23a338c631825.module.wasm": "/friendly-banter/06e53ba23a338c631825.module.wasm",
+    "static/js/3.13698158.chunk.js.map": "/friendly-banter/static/js/3.13698158.chunk.js.map",
     "static/js/4.9146a1aa.chunk.js": "/friendly-banter/static/js/4.9146a1aa.chunk.js",
     "static/js/4.9146a1aa.chunk.js.map": "/friendly-banter/static/js/4.9146a1aa.chunk.js.map",
     "index.html": "/friendly-banter/index.html",
@@ -17,7 +17,7 @@
     "static/js/2.c4338dc3.chunk.js.LICENSE.txt": "/friendly-banter/static/js/2.c4338dc3.chunk.js.LICENSE.txt"
   },
   "entrypoints": [
-    "static/js/runtime-main.812c6de5.js",
+    "static/js/runtime-main.1396ff6d.js",
     "static/js/main.3d12f1c0.chunk.js"
   ]
 }
