@@ -1,8 +1,15 @@
+mod utils;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
+pub fn init_panic_hook() {
+   utils::set_panic_hook();
+}
+
+#[wasm_bindgen]
 pub fn add_two_ints(a: u32, b: u32) -> u32 {
-   a + b
+   a + b + 1
 }
 
 #[wasm_bindgen]

@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import { init_panic_hook } from 'wasm'
+
+init_panic_hook();
 
 ReactDOM.render(
   <React.StrictMode>
