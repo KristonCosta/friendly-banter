@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import './App.css';
 
-import {add_two_ints, fib} from "wasm";
+import { start } from "wasm";
 function App() {
-   const [sum, setSum] = useState<number>(add_two_ints(10, 20));
-   const [fibb, setFib] = useState<number>(fib(10));
+   start();
    return (
       <div className="App" >
-         <div>Sum Results: {sum}</div>
-         <div>Fib Results: {fibb}</div>
+         <div>Sum Results: {2}</div>
+         <div>Fib Results: {2}</div>
       </div>
    );
 }

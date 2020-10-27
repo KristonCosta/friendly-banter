@@ -6,6 +6,7 @@ use hyper::{
 use std::net::SocketAddr;
 use tracing_subscriber::fmt::format::FmtSpan;
 use webrtc_unreliable::Server as RtcServer;
+use std::str;
 
 #[derive(Clone)]
 struct Router {
@@ -41,9 +42,9 @@ impl Router {
 }
 #[tokio::main]
 async fn main() {
-    let data_port = "192.168.1.12:42424".parse().unwrap();
-    let public_port = "192.168.1.12:42424".parse().unwrap();
-    let session_port: SocketAddr = "192.168.1.12:8080".parse().unwrap();
+    let data_port = "127.0.0.1:42424".parse().unwrap();
+    let public_port = "127.0.0.1:42424".parse().unwrap();
+    let session_port: SocketAddr = "127.0.0.1:8080".parse().unwrap();
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
         .with_span_events(FmtSpan::CLOSE)
@@ -70,8 +71,18 @@ async fn main() {
     loop {
         let received = match rtc_server.recv().await {
             Ok(received) => {
+                tracing::info!("Received message from {}", received.remote_addr);
                 message_buf.clear();
                 message_buf.extend(received.message.as_ref());
+                match str::from_utf8(&message_buf) {
+                    Ok(s) => {
+                        tracing::info!("Received text {}", s);
+                    }
+                    Err(_) => {
+                        tracing::info!("Could not parse text.");
+                    }
+                };
+                
                 Some((received.message_type, received.remote_addr))
             }
             Err(err) => {
