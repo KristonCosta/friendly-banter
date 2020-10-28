@@ -1,3 +1,6 @@
+mod game;
+
+use game::universe::Universe;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
@@ -67,6 +70,7 @@ async fn main() {
         Server::bind(&session_port).serve(server).await.unwrap();
     });
 
+    let universe = Universe::new();
     let mut message_buf = Vec::new();
     loop {
         let received = match rtc_server.recv().await {
@@ -74,15 +78,16 @@ async fn main() {
                 tracing::info!("Received message from {}", received.remote_addr);
                 message_buf.clear();
                 message_buf.extend(received.message.as_ref());
-                match str::from_utf8(&message_buf) {
-                    Ok(s) => {
-                        tracing::info!("Received text {}", s);
-                    }
-                    Err(_) => {
-                        tracing::info!("Could not parse text.");
-                    }
-                };
                 
+                match unpack(&message_buf) {
+                    Message::Sync => {
+                        tracing::info!("Sync request came in")
+                    }
+                    Message::Unknown => {
+                        tracing::info!("Unknown request came in")
+                    }
+                }
+
                 Some((received.message_type, received.remote_addr))
             }
             Err(err) => {
@@ -99,6 +104,23 @@ async fn main() {
                 tracing::warn!("Failed to send message to {}. Error: {}", remote_addr, err);
             }
         }
+    }
+
+}
+enum Message {
+    Sync,
+    Unknown,
+}
+
+fn unpack(message: &Vec<u8>) -> Message {
+    match message.len() {
+        1 => {
+            match message[0] {
+                1 => Message::Sync, 
+                _ => Message::Unknown
+            }
+        }
+        _ => Message::Unknown
     }
 }
 
@@ -135,6 +157,7 @@ mod handlers {
                 .body(Body::from(message.into()))
         }
 
+        
         pub async fn post_session(
             mut self,
             request: Request,
