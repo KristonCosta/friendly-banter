@@ -83,6 +83,9 @@ async fn main() {
                     Message::Sync => {
                         tracing::info!("Sync request came in")
                     }
+                    Message::Text(message) => {
+                        tracing::info!("Text message came in {}", message);
+                    }
                     Message::Unknown => {
                         tracing::info!("Unknown request came in")
                     }
@@ -109,14 +112,16 @@ async fn main() {
 }
 enum Message {
     Sync,
+    Text(String),
     Unknown,
 }
 
 fn unpack(message: &Vec<u8>) -> Message {
     match message.len() {
-        1 => {
+        1 ..= <usize>::MAX  => {
             match message[0] {
                 1 => Message::Sync, 
+                2 => Message::Text(str::from_utf8(&message[1..]).unwrap().to_string()),
                 _ => Message::Unknown
             }
         }
