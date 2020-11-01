@@ -1,44 +1,79 @@
-use crate::Eventer;
+use crate::{Eventer, common::Message};
+
+use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen_futures::spawn_local;
+use std::sync::mpsc::{self, Receiver, Sender};
 
 
 #[wasm_bindgen]
-#[derive(Clone)]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Array<string>")]
+    pub type JSRustVec;
+}
+
+#[wasm_bindgen]
 pub struct Processor {
-    eventer: Eventer
+    tx: Sender<Message>,
+    rx: Receiver<Message>,
+    eventer: Eventer,
+    pending_messages: Vec<String>,
+    event_chunk_size: usize
 }
 
 #[wasm_bindgen]
 impl Processor {
     pub fn from(eventer: Eventer) -> Self {
+        let (tx, rx) = mpsc::channel();
         Self {
-            eventer
+            tx, 
+            rx,
+            eventer,
+            event_chunk_size: 1024,
+            pending_messages: Vec::with_capacity(100)
         }
     }
 
-    pub fn copy(&self) -> Self {
-        self.clone()
-    }
+    pub fn tick(&mut self) -> Result<JsValue, JsValue> {
+        for message in self.rx.try_iter() {
+            tracing::info!("Processor sending message {:?}", message);
+            self.eventer.channels().send(message);
+        }
 
-    pub async fn tick(self) -> Result<JsValue, JsValue> {
-        let data = self.eventer.incoming().try_recv();
-        match data {
-            Ok(event) => {
-                match event {
-                    crate::Event::String(msg) => {
-                        tracing::info!("Processor received message {}", msg);
+        loop {
+            match self.eventer.channels().try_recv::<Message>() {
+                Ok(message) => {
+                    match message {
+                        Some(message) => {
+                            tracing::info!("Processor received message {:?}", message);
+                            match message {
+                                Message::Sync => {}
+                                Message::Text(txt) => {
+                                    self.pending_messages.push(txt);
+                                }
+                                Message::Unknown => {}
+                            }
+                            
+                        }, 
+                        None => {break}
                     }
                 }
+                Err(err) => {tracing::error!("{:?}", err)}
             }
-            Err(_) => {}
-        };
-        self.send().await
+        }
+        
+        Ok(JsValue::TRUE)
     }
 
-    pub async fn send(self) -> Result<JsValue, JsValue> {
-        let sender = self.eventer.outgoing().clone();
-        sender.send(crate::Message::Sync).await.unwrap();
-        Ok(JsValue::TRUE)
+    pub fn get_pending(&mut self) -> JSRustVec {
+        let my_vec: Array = self.pending_messages.drain(..).map(JsValue::from).collect();
+        my_vec.unchecked_into::<JSRustVec>()
+        
+    }
+
+    pub fn send(&self, string: String)  {
+        tracing::info!("Processor sending message {:?}", string);
+        self.tx.send(Message::Text(string)).unwrap();
     }
 }
 

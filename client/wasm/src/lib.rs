@@ -1,10 +1,13 @@
 #![feature(async_closure)]
 mod processor;
+mod runtime;
 mod utils;
+mod common;
 
-use futures::{future::MapErr, Future, FutureExt};
+use common::Message;
+use futures::{StreamExt, join};
 use js_sys::{Promise, Reflect};
-use std::sync::mpsc::{self, Receiver, Sender};
+use turbulence::{BufferPacket, IncomingMultiplexedPackets, MessageChannels, MessageChannelsBuilder, OutgoingMultiplexedPackets, Packet, PacketMultiplexer, PacketPool};
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::{future_to_promise, spawn_local, JsFuture};
 use web_sys::{
@@ -18,100 +21,66 @@ pub fn init_panic_hook() {
     utils::set_hooks();
 }
 
-pub enum Event {
-    String(String),
-}
-
-pub enum Message {
-    Sync,
-}
-
-struct MessageBuffer(Vec<u8>);
-
-impl MessageBuffer {
-    pub fn with_capacity(n: usize) -> Self {
-        Self(Vec::with_capacity(n))
-    }
-
-    fn load(&mut self, message: Message) {
-        self.0.clear();
-        match message {
-            Message::Sync => self.0.push(1),
-        }
-    }
-}
-
-impl AsRef<[u8]> for MessageBuffer {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
 enum DispatcherEvent {
     ChannelOpen,
 }
 #[wasm_bindgen]
-#[derive(Clone)]
 
 pub struct Eventer {
-    incoming: async_channel::Receiver<Event>,
-    outgoing: async_channel::Sender<Message>,
+    channels: MessageChannels,
     dispatcher: Option<Dispatcher>,
 }
 
 impl Eventer {
-    fn new(
-        incoming: async_channel::Receiver<Event>,
-        outgoing: async_channel::Sender<Message>,
-        dispatcher: Dispatcher,
-    ) -> Self {
-        Self {
-            incoming,
-            outgoing,
-            dispatcher: Some(dispatcher),
-        }
-    }
 
-    pub fn incoming(&self) -> &async_channel::Receiver<Event> {
-        &self.incoming
-    }
 
-    pub fn outgoing(&self) -> &async_channel::Sender<Message> {
-        &self.outgoing
+    pub fn channels(&mut self) -> &mut MessageChannels {
+        &mut self.channels
     }
 }
 
 #[wasm_bindgen]
 impl Eventer {
-    pub fn run(&mut self) -> Promise {
+    pub fn new() -> Self {
+        let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
+        let runtime = runtime::Runtime::new();
+        let mut multiplexer = PacketMultiplexer::new();
+        let mut builder = MessageChannelsBuilder::new(runtime, pool);
+        builder
+            .register::<Message>(common::MESSAGE_SETTINGS)
+            .unwrap();
+
+        let mut channels = builder.build(&mut multiplexer);
+
+        let dispatcher = Dispatcher::new(multiplexer);
+        Self {
+            channels,
+            dispatcher: Some(dispatcher),
+        }
+    }
+    pub fn run(&mut self) {
         let mut dispatcher = self.dispatcher.take().unwrap();
         future_to_promise(async move {
             dispatcher.run().await;
             Ok(JsValue::TRUE)
-        })
+        });
     }
 }
 
 #[wasm_bindgen]
-#[derive(Clone)]
 struct Dispatcher {
-    rx_message: async_channel::Receiver<Message>,
-    tx_message: async_channel::Sender<Message>,
-    rx_event: async_channel::Receiver<Event>,
-    tx_event: async_channel::Sender<Event>,
+    rx_incoming: async_channel::Receiver<Box<[u8]>>,
+    tx_incoming: async_channel::Sender<Box<[u8]>>,
+    incoming: IncomingMultiplexedPackets<BufferPacket<Box<[u8]>>>,
+    outgoing: OutgoingMultiplexedPackets<BufferPacket<Box<[u8]>>>,
     channel: RtcDataChannel,
-    peer: RtcPeerConnection
+    peer: RtcPeerConnection,
 }
 
-#[wasm_bindgen]
 impl Dispatcher {
-    pub fn new() -> Self {
-        let (tx_message, rx_message): (
-            async_channel::Sender<Message>,
-            async_channel::Receiver<Message>,
-        ) = async_channel::unbounded();
-        let (tx_event, rx_event): (async_channel::Sender<Event>, async_channel::Receiver<Event>) =
-        async_channel::unbounded();
+    pub fn new(multiplexer: PacketMultiplexer<BufferPacket<Box<[u8]>>>) -> Self {
+        let (incoming, outgoing) = multiplexer.start();
+        let (tx_incoming, rx_incoming) = async_channel::unbounded();
         let peer: RtcPeerConnection = RtcPeerConnection::new().unwrap();
         tracing::info!(
             "Created peer connection with state {:?}",
@@ -122,67 +91,88 @@ impl Dispatcher {
         let channel: RtcDataChannel =
             peer.create_data_channel_with_data_channel_dict("webudp", &channel_dict);
         Self {
-            peer, 
-            channel,  
-            tx_event, 
-            rx_event, 
-            tx_message, rx_message, 
+            peer,
+            channel,
+            tx_incoming,
+            rx_incoming,
+            incoming,
+            outgoing,
         }
     }
+}
 
+#[wasm_bindgen]
+impl Dispatcher {
     pub async fn run(self) {
-        tracing::info!("Starting dispatcher");
-        let result = async {
+        let Dispatcher {
+            rx_incoming,
+            tx_incoming,
+            mut incoming,
+            mut outgoing,
+            channel,
+            peer,
+        } = self.start().await;
+        let incoming = async move {
+            let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
             tracing::info!("Dispatcher received channel open. Processing messages");
-            let mut message_buffer = MessageBuffer::with_capacity(65536);
             loop {
-                match self.rx_message.recv().await {
+                match rx_incoming.recv().await {
                     Ok(message) => {
-                        message_buffer.load(message);
-                        self.channel
-                            .send_with_u8_array(message_buffer.as_ref())
-                            .unwrap();
+                        let mut packet = pool.acquire();
+                        packet.extend(&message);
+                        incoming.try_send(packet);
                     }
                     Err(_) => break,
                 }
             }
         };
-        result.await;
+        let outgoing = async move {
+            let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
+            tracing::info!("Dispatcher received channel open. Processing messages");
+            loop {
+                match outgoing.next().await {
+                    Some(message) => {
+                        channel.send_with_u8_array(message.as_ref()).unwrap();
+                    }
+                    _ => break,
+                }
+            }
+        };
+        join!(incoming, outgoing);
     }
 
-    pub async fn start(self) -> Eventer {    
+    pub async fn start(self) -> Self {
+        let (tx_internal, rx_internal): (
+            async_channel::Sender<DispatcherEvent>,
+            async_channel::Receiver<DispatcherEvent>,
+        ) = async_channel::unbounded();
 
-
-        let (tx_internal, rx_internal): (Sender<DispatcherEvent>, Receiver<DispatcherEvent>) =
-            mpsc::channel();
-
-        
-        self.channel.set_binary_type(RtcDataChannelType::Arraybuffer);
-        let tx_event = self.tx_event.clone();
-        let on_message_callback = Closure::wrap(Box::new(
-            move |event: MessageEvent| {
-                let arr: js_sys::Uint8Array = js_sys::Uint8Array::new(&event.data());
-                let rust_vec = arr.to_vec();
-                let tx = tx_event.clone();
-                spawn_local(async move {
-                    tx.send(Event::String(format!("{:?}", rust_vec)))
-                        .await
-                        .unwrap();
-                });
-            }, 
-        ) as Box<dyn FnMut(MessageEvent)>);
-
-        self.channel.set_onmessage(Some(on_message_callback.as_ref().unchecked_ref()));
-        on_message_callback.forget();
-
-        let inner_channel = self.channel.clone();
-        let on_channel_open = Closure::wrap(Box::new(move |_: MessageEvent| {
-            tracing::info!("Channel opened");
-
-            tx_internal.send(DispatcherEvent::ChannelOpen);
+        self.channel
+            .set_binary_type(RtcDataChannelType::Arraybuffer);
+        let tx_event = self.tx_incoming.clone();
+        let on_message_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
+            let arr: js_sys::Uint8Array = js_sys::Uint8Array::new(&event.data());
+            let rust_vec = arr.to_vec();
+            let tx = tx_event.clone();
+            spawn_local(async move {
+                tx.send(rust_vec.into_boxed_slice()).await.unwrap();
+            });
         }) as Box<dyn FnMut(MessageEvent)>);
 
-        self.channel.set_onopen(Some(on_channel_open.as_ref().unchecked_ref()));
+        self.channel
+            .set_onmessage(Some(on_message_callback.as_ref().unchecked_ref()));
+        on_message_callback.forget();
+
+        let on_channel_open = Closure::wrap(Box::new(move |_: MessageEvent| {
+            tracing::info!("Channel opened");
+            let tx = tx_internal.clone();
+            spawn_local(async move {
+                tx.send(DispatcherEvent::ChannelOpen).await.unwrap();
+            });
+        }) as Box<dyn FnMut(MessageEvent)>);
+
+        self.channel
+            .set_onopen(Some(on_channel_open.as_ref().unchecked_ref()));
         on_channel_open.forget();
 
         let on_ice_candidate_callback = Closure::wrap(Box::new(
@@ -196,7 +186,8 @@ impl Dispatcher {
             },
         )
             as Box<dyn FnMut(RtcPeerConnectionIceEvent)>);
-        self.peer.set_onicecandidate(Some(on_ice_candidate_callback.as_ref().unchecked_ref()));
+        self.peer
+            .set_onicecandidate(Some(on_ice_candidate_callback.as_ref().unchecked_ref()));
         on_ice_candidate_callback.forget();
 
         let offer = JsFuture::from(self.peer.create_offer()).await.unwrap();
@@ -219,8 +210,8 @@ impl Dispatcher {
         let request_clone = request.clone();
         request.set_response_type(XmlHttpRequestResponseType::Json);
 
-        let address = "http://localhost:8080/session";
-
+//        let address = "http://localhost:8080/session";
+        let address = "http://192.168.100.135:8080/session";
         request.open("POST", address).unwrap();
         let peer_clone = self.peer.clone();
         let on_request_response_callback: wasm_bindgen::prelude::Closure<dyn FnMut() -> ()> =
@@ -302,17 +293,11 @@ impl Dispatcher {
             .send_with_opt_str(Some(&self.peer.local_description().unwrap().sdp()))
             .unwrap();
         let my_listener = rx_internal;
-        
-        async {
-            loop {
-                match my_listener.try_recv() {
-                    Err(_) => break,
-                    Ok(_) => break,
-                }
-            }
-        }
-        .await;
 
-        Eventer::new(self.rx_event.clone(), self.tx_message.clone(), self)
+        match my_listener.recv().await {
+            Ok(_) => (),
+            _ => panic!("Failed"),
+        };
+        self
     }
 }

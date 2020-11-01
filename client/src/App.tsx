@@ -1,32 +1,17 @@
 import React, { useState } from 'react';
 import './App.css';
+import {processor as p} from './services/wasm_runner';
 
-import { Dispatcher, Processor, Eventer } from "wasm";
 function App() {
-   let dispatcher = Dispatcher.new();
-   dispatcher.start().then(
-      (eventer: Eventer) => {
-         eventer.run();
-         let processor = Processor.from(eventer);
-
-
-         var numberOfTimes = 5;
-         var delay = 1000;
-         
-         setTimeout( async function() {
-            await processor.copy().tick();
-            processor.copy().send()
-         }, delay);
-         
-      }
-   );
-   
+   var cnt = 0;
+   var interval: number = -1;
 
 
    return (
       <div className="App" >
          <div>Sum Results: {2}</div>
          <div>Fib Results: {2}</div>
+         
       </div>
    );
 }

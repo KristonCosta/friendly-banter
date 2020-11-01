@@ -1,15 +1,20 @@
-mod game;
+mod runtime;
 
-use game::universe::Universe;
+use async_channel::TryRecvError;
+use common::Message;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
     Body, Error, Method, Response, Server, StatusCode,
 };
+
+use futures::{StreamExt, TryStreamExt};
 use std::net::SocketAddr;
-use tracing_subscriber::fmt::format::FmtSpan;
-use webrtc_unreliable::Server as RtcServer;
 use std::str;
+use tokio_compat_02::FutureExt;
+use tracing_subscriber::fmt::format::FmtSpan;
+use turbulence::{BufferPacket, MessageChannelsBuilder, Packet, PacketMultiplexer, PacketPool};
+use webrtc_unreliable::{MessageType, Server as RtcServer};
 
 #[derive(Clone)]
 struct Router {
@@ -45,9 +50,14 @@ impl Router {
 }
 #[tokio::main]
 async fn main() {
+    /*
     let data_port = "127.0.0.1:42424".parse().unwrap();
     let public_port = "127.0.0.1:42424".parse().unwrap();
     let session_port: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    */
+    let data_port = "192.168.100.135:42424".parse().unwrap();
+    let public_port = "192.168.100.135:42424".parse().unwrap();
+    let session_port: SocketAddr = "192.168.100.135:8080".parse().unwrap();
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
         .with_span_events(FmtSpan::CLOSE)
@@ -66,66 +76,87 @@ async fn main() {
         }
     });
 
+    tokio::spawn(
+        async move {
+            Server::bind(&session_port).serve(server).await.unwrap();
+        }
+        .compat(),
+    );
+
+    let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
+    let runtime = runtime::Runtime::new();
+    let mut multiplexer = PacketMultiplexer::new();
+    let mut builder = MessageChannelsBuilder::new(runtime, pool);
+    builder
+        .register::<Message>(common::MESSAGE_SETTINGS)
+        .unwrap();
+
+    let mut channels = builder.build(&mut multiplexer);
+
+    let (tx_outgoing, rx_outgoing): (
+        async_channel::Sender<BufferPacket<Box<[u8]>>>,
+        async_channel::Receiver<BufferPacket<Box<[u8]>>>,
+    ) = async_channel::unbounded();
+    let (mut incoming, mut outgoing) = multiplexer.start();
     tokio::spawn(async move {
-        Server::bind(&session_port).serve(server).await.unwrap();
+        loop {
+            let received = match channels.try_async_recv::<Message>().await {
+                Ok(message) => {
+                    tracing::info!("Received {:?}", message);
+                    Some(message)
+                }
+                Err(_) => None,
+            };
+            if let Some(message) = received {
+                tracing::info!("Sending {:?} back out", message);
+                channels.try_send(message).unwrap();
+            }
+        }
+    });
+    tokio::spawn(async move {
+        loop {
+            match outgoing.next().await {
+                Some(buf) => {
+                    tracing::info!("Queuing pending outgoing message");
+                    tx_outgoing.send(buf).await.unwrap()
+                }
+                _ => break,
+            }
+        }
     });
 
-    let universe = Universe::new();
-    let mut message_buf = Vec::new();
     loop {
-        let received = match rtc_server.recv().await {
+        match rtc_server.recv().await {
             Ok(received) => {
-                tracing::info!("Received message from {}", received.remote_addr);
-                message_buf.clear();
-                message_buf.extend(received.message.as_ref());
-                
-                match unpack(&message_buf) {
-                    Message::Sync => {
-                        tracing::info!("Sync request came in")
-                    }
-                    Message::Text(message) => {
-                        tracing::info!("Text message came in {}", message);
-                    }
-                    Message::Unknown => {
-                        tracing::info!("Unknown request came in")
-                    }
-                }
-
-                Some((received.message_type, received.remote_addr))
+                tracing::info!("Ingesting incoming message");
+                let mut packet = pool.acquire();
+                packet.extend(received.message.as_ref());
+                incoming.try_send(packet).unwrap();
             }
             Err(err) => {
                 tracing::warn!("Failed to receive message. Error: {}", err);
-                None
             }
         };
 
-        if let Some((message_type, remote_addr)) = received {
-            if let Err(err) = rtc_server
-                .send(&message_buf, message_type, &remote_addr)
-                .await
-            {
-                tracing::warn!("Failed to send message to {}. Error: {}", remote_addr, err);
+        let pending_outgoing = match rx_outgoing.try_recv() {
+            Ok(packet) => {
+                tracing::info!("Sending pending outgoing message");
+                Some(packet)
             }
-        }
-    }
+            Err(TryRecvError::Closed) => break,
+            Err(_) => None,
+        };
 
-}
-enum Message {
-    Sync,
-    Text(String),
-    Unknown,
-}
-
-fn unpack(message: &Vec<u8>) -> Message {
-    match message.len() {
-        1 ..= <usize>::MAX  => {
-            match message[0] {
-                1 => Message::Sync, 
-                2 => Message::Text(str::from_utf8(&message[1..]).unwrap().to_string()),
-                _ => Message::Unknown
+        if let Some(packet) = pending_outgoing {
+            let clients: Vec<SocketAddr> =
+                rtc_server.connected_clients().map(|x| x.clone()).collect();
+            for client in clients {
+                rtc_server
+                    .send(packet.as_ref(), MessageType::Binary, &client)
+                    .await
+                    .unwrap();
             }
-        }
-        _ => Message::Unknown
+        };
     }
 }
 
@@ -162,7 +193,6 @@ mod handlers {
                 .body(Body::from(message.into()))
         }
 
-        
         pub async fn post_session(
             mut self,
             request: Request,
@@ -177,7 +207,10 @@ mod handlers {
                 .await
             {
                 Ok(mut response) => {
-                    tracing::info!("Successfully handled RTC request from {}", request.remote_address);
+                    tracing::info!(
+                        "Successfully handled RTC request from {}",
+                        request.remote_address
+                    );
                     response.headers_mut().insert(
                         header::ACCESS_CONTROL_ALLOW_ORIGIN,
                         HeaderValue::from_static("*"),
@@ -187,7 +220,7 @@ mod handlers {
                 Err(err) => {
                     tracing::error!("Failed to handle RTC session request. Error {}", err);
                     Self::response(StatusCode::BAD_REQUEST, format!("{}", err))
-                },
+                }
             }
         }
     }
