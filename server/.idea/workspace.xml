@@ -32,11 +32,10 @@
   <component name="ChangeListManager">
     <list default="true" id="8fab5451-fdfa-4fde-adaf-7ee7b526162b" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/../client/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../client/src/App.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../client/wasm/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/../client/wasm/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../client/wasm/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../client/wasm/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../client/src/components/chat_form.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../client/src/components/chat_form.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../client/src/services/wasm_runner.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../client/src/services/wasm_runner.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../client/wasm/src/processor.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../client/wasm/src/processor.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -79,14 +78,10 @@
         <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
       </method>
     </configuration>
-    <configuration default="true" type="GradleAppRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="com.jetbrains.cidr.cpp.gradle.execution.GradleNativeBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
   </component>
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
+    <option name="version" value="2" />
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
@@ -97,6 +92,7 @@
       <option name="presentableId" value="Default" />
       <updated>1604209616101</updated>
       <workItem from="1604209617287" duration="699000" />
+      <workItem from="1604252102404" duration="384000" />
     </task>
     <servers />
   </component>
@@ -113,6 +109,7 @@
         </entry>
       </map>
     </option>
+    <option name="oldMeFiltersMigrated" value="true" />
   </component>
   <component name="WindowStateProjectService">
     <state x="411" y="245" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1604209635258">
@@ -156,14 +153,19 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/src/main.rs</url>
-          <line>55</line>
-          <option name="timeStamp" value="2" />
+          <url>file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/webrtc-unreliable-0.5.0/src/interval.rs</url>
+          <line>36</line>
+          <option name="timeStamp" value="4" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/src/main.rs</url>
-          <line>114</line>
-          <option name="timeStamp" value="3" />
+          <url>file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/webrtc-unreliable-0.5.0/src/server.rs</url>
+          <line>393</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/webrtc-unreliable-0.5.0/src/server.rs</url>
+          <line>398</line>
+          <option name="timeStamp" value="6" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

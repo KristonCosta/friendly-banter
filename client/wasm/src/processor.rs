@@ -39,7 +39,7 @@ impl Processor {
             tracing::info!("Processor sending message {:?}", message);
             self.eventer.channels().send(message);
         }
-
+        self.eventer.channels().flush::<Message>();
         loop {
             match self.eventer.channels().try_recv::<Message>() {
                 Ok(message) => {

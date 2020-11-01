@@ -1,7 +1,7 @@
 import React from "react";
 import {processor as p} from '../services/wasm_runner';
 
-export class NameForm extends React.Component<{}, { value: string }> {
+export class ChatForm extends React.Component<{}, { value: string }> {
     constructor(props: any) {
       super(props);
       this.state = {value: ''};

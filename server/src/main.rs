@@ -2,13 +2,13 @@ mod runtime;
 
 use async_channel::TryRecvError;
 use common::Message;
+use futures::{pin_mut, FutureExt as FExt, StreamExt, TryStreamExt};
+use futures_util::select;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
     Body, Error, Method, Response, Server, StatusCode,
 };
-
-use futures::{StreamExt, TryStreamExt};
 use std::net::SocketAddr;
 use std::str;
 use tokio_compat_02::FutureExt;
@@ -103,7 +103,11 @@ async fn main() {
             let received = match channels.try_async_recv::<Message>().await {
                 Ok(message) => {
                     tracing::info!("Received {:?}", message);
-                    Some(message)
+                    match message {
+                        Message::Sync => None,
+                        Message::Text(_) => Some(message),
+                        Message::Unknown => None,
+                    }
                 }
                 Err(_) => None,
             };
@@ -111,6 +115,7 @@ async fn main() {
                 tracing::info!("Sending {:?} back out", message);
                 channels.try_send(message).unwrap();
             }
+            channels.flush::<Message>();
         }
     });
     tokio::spawn(async move {
@@ -126,28 +131,42 @@ async fn main() {
     });
 
     loop {
-        match rtc_server.recv().await {
-            Ok(received) => {
-                tracing::info!("Ingesting incoming message");
-                let mut packet = pool.acquire();
-                packet.extend(received.message.as_ref());
-                incoming.try_send(packet).unwrap();
-            }
-            Err(err) => {
-                tracing::warn!("Failed to receive message. Error: {}", err);
-            }
-        };
+        let pending_packet = {
+            let recieve = rtc_server.recv().fuse();
+            pin_mut!(recieve);
 
-        let pending_outgoing = match rx_outgoing.try_recv() {
-            Ok(packet) => {
-                tracing::info!("Sending pending outgoing message");
-                Some(packet)
-            }
-            Err(TryRecvError::Closed) => break,
-            Err(_) => None,
-        };
+            let pending_send = rx_outgoing.recv().fuse();
+            pin_mut!(pending_send);
 
-        if let Some(packet) = pending_outgoing {
+            let pending_packet = select! {
+                received = recieve => {
+                    match received {
+                        Ok(received) => {
+                            tracing::info!("Ingesting incoming message");
+                            let mut packet = pool.acquire();
+                            packet.extend(received.message.as_ref());
+                            incoming.try_send(packet).unwrap();
+                        }
+                        Err(err) => {
+                            tracing::warn!("Failed to receive message. Error: {}", err);
+                        }
+                    };
+                    None
+                },
+                pending_packet = pending_send => {
+                    match pending_packet {
+                        Ok(packet) => {
+                            tracing::info!("Sending pending outgoing message");
+                            Some(packet)
+                        },
+                        Err(_) => None,
+                    }
+                },
+                default => {None}
+            };
+            pending_packet
+        };
+        if let Some(packet) = pending_packet {
             let clients: Vec<SocketAddr> =
                 rtc_server.connected_clients().map(|x| x.clone()).collect();
             for client in clients {

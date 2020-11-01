@@ -982,6 +982,7 @@ dependencies = [
  "async-channel",
  "common",
  "futures",
+ "futures-util",
  "hyper",
  "tokio 0.3.2",
  "tokio-compat-02",
