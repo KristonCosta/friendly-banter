@@ -161,8 +161,7 @@ async fn main() {
                         },
                         Err(_) => None,
                     }
-                },
-                default => {None}
+                }
             };
             pending_packet
         };
