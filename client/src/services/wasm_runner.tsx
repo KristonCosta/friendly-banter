@@ -1,11 +1,6 @@
-import { Dispatcher, Processor, Eventer } from "wasm";
-let eventer = Eventer.new();
-let prom = eventer.run()
-let processor_inner = Processor.from(eventer);
-processor_inner.send("Hello");
-setInterval(async function () {
-  await processor_inner.tick();
-}, 10);
+import { start } from "repl";
+import { Processor } from "wasm";
+let processor_inner = Processor.start();
 
     
 

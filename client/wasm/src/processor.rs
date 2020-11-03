@@ -1,10 +1,10 @@
-use crate::{Eventer, common::Message};
+use crate::{runtime::WasmRuntime, WebRTCClient};
 
+use common::message::{Message, MessageProcessor};
+use futures::join;
 use js_sys::Array;
 use wasm_bindgen::{prelude::*, JsCast};
-use wasm_bindgen_futures::spawn_local;
-use std::sync::mpsc::{self, Receiver, Sender};
-
+use wasm_bindgen_futures::{future_to_promise};
 
 #[wasm_bindgen]
 extern "C" {
@@ -14,66 +14,73 @@ extern "C" {
 
 #[wasm_bindgen]
 pub struct Processor {
-    tx: Sender<Message>,
-    rx: Receiver<Message>,
-    eventer: Eventer,
+    tx: async_channel::Sender<Message>,
+    
+    message_receiver: async_channel::Receiver<Message>,
+
     pending_messages: Vec<String>,
-    event_chunk_size: usize
 }
 
 #[wasm_bindgen]
 impl Processor {
-    pub fn from(eventer: Eventer) -> Self {
-        let (tx, rx) = mpsc::channel();
-        Self {
-            tx, 
-            rx,
-            eventer,
-            event_chunk_size: 1024,
-            pending_messages: Vec::with_capacity(100)
-        }
-    }
+    pub fn start() -> Self {
+        let (tx, rx) = async_channel::unbounded();
+        let mut message_processor = MessageProcessor::new(WasmRuntime::new());
+        let client = WebRTCClient::new(
+            "http://127.0.0.1:8080/session".to_string(),
+            message_processor.outgoing_byte_reader(),
+            message_processor.incoming_byte_sender(),
+        );
 
-    pub fn tick(&mut self) -> Result<JsValue, JsValue> {
-        for message in self.rx.try_iter() {
-            tracing::info!("Processor sending message {:?}", message);
-            self.eventer.channels().send(message);
-        }
-        self.eventer.channels().flush::<Message>();
-        loop {
-            match self.eventer.channels().try_recv::<Message>() {
-                Ok(message) => {
-                    match message {
-                        Some(message) => {
-                            tracing::info!("Processor received message {:?}", message);
-                            match message {
-                                Message::Sync => {}
-                                Message::Text(txt) => {
-                                    self.pending_messages.push(txt);
-                                }
-                                Message::Unknown => {}
-                            }
-                            
-                        }, 
-                        None => {break}
+        let inner_receiver = message_processor.message_receiver().clone();
+
+        let queued_messages = rx;
+        let message_sender = message_processor.message_sender().clone();
+
+        future_to_promise(async move {
+            let dispatcher = async move {
+                loop {
+                    for message in queued_messages.recv().await {
+                        tracing::info!("Processor sending message {:?}", message);
+                        message_sender.send(message).await;
                     }
                 }
-                Err(err) => {tracing::error!("{:?}", err)}
-            }
+                
+            };
+            join![client.run(), message_processor.run(), dispatcher];
+            Ok(JsValue::UNDEFINED)
+        });
+        Self {
+            tx, 
+            message_receiver: inner_receiver,
+            pending_messages: Vec::with_capacity(100),
         }
-        
-        Ok(JsValue::TRUE)
     }
 
     pub fn get_pending(&mut self) -> JSRustVec {
+        for _ in 0..100 {
+            match self.message_receiver.try_recv() {
+                Ok(message) => {
+                    match message {
+                        Message::Sync => {}
+                        Message::Text(txt) => {
+                            self.pending_messages.push(txt);
+                        }
+                        Message::Unknown => {}
+                    }
+                    
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
         let my_vec: Array = self.pending_messages.drain(..).map(JsValue::from).collect();
         my_vec.unchecked_into::<JSRustVec>()
-        
     }
 
-    pub fn send(&self, string: String)  {
+    pub fn send(&self, string: String) {
         tracing::info!("Processor sending message {:?}", string);
-        self.tx.send(Message::Text(string)).unwrap();
+        self.tx.try_send(Message::Text(string)).unwrap();
     }
 }
-

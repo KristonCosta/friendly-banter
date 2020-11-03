@@ -1,7 +1,7 @@
 mod runtime;
 
 use async_channel::TryRecvError;
-use common::Message;
+use common::{buffer::SimpleBufferPool, message::{MESSAGE_SETTINGS, Message}};
 use futures::{pin_mut, FutureExt as FExt, StreamExt, TryStreamExt};
 use futures_util::select;
 use hyper::{
@@ -50,14 +50,15 @@ impl Router {
 }
 #[tokio::main]
 async fn main() {
-    /*
+    
     let data_port = "127.0.0.1:42424".parse().unwrap();
     let public_port = "127.0.0.1:42424".parse().unwrap();
     let session_port: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    */
-    let data_port = "192.168.100.135:42424".parse().unwrap();
-    let public_port = "192.168.100.135:42424".parse().unwrap();
+    /*
+    let data_port = "localhost:42424".parse().unwrap();
+    let public_port = "localhost:42424".parse().unwrap();
     let session_port: SocketAddr = "192.168.100.135:8080".parse().unwrap();
+    */
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
         .with_span_events(FmtSpan::CLOSE)
@@ -83,12 +84,12 @@ async fn main() {
         .compat(),
     );
 
-    let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
+    let pool = turbulence::BufferPacketPool::new(SimpleBufferPool(32));
     let runtime = runtime::Runtime::new();
     let mut multiplexer = PacketMultiplexer::new();
     let mut builder = MessageChannelsBuilder::new(runtime, pool);
     builder
-        .register::<Message>(common::MESSAGE_SETTINGS)
+        .register::<Message>(MESSAGE_SETTINGS)
         .unwrap();
 
     let mut channels = builder.build(&mut multiplexer);

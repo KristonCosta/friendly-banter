@@ -38,6 +38,9 @@ turbulence = "0.3.0"
 serde = { version = "1.0", features = ["derive"] }
 instant = { version = "0.1", features = ["wasm-bindgen"] }
 
+[dependencies.common]
+path = "common"
+
 [dependencies.wasm-bindgen]
 version = "0.2.63"
 features = ["nightly", "serde-serialize"]

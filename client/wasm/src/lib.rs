@@ -2,14 +2,11 @@
 mod processor;
 mod runtime;
 mod utils;
-mod common;
 
-use common::Message;
-use futures::{StreamExt, join};
-use js_sys::{Promise, Reflect};
-use turbulence::{BufferPacket, IncomingMultiplexedPackets, MessageChannels, MessageChannelsBuilder, OutgoingMultiplexedPackets, Packet, PacketMultiplexer, PacketPool};
+use futures::{join};
+use js_sys::{Reflect};
 use wasm_bindgen::{prelude::*, JsCast};
-use wasm_bindgen_futures::{future_to_promise, spawn_local, JsFuture};
+use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
     MessageEvent, RtcDataChannel, RtcDataChannelInit, RtcDataChannelType, RtcIceCandidateInit,
     RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType, RtcSessionDescriptionInit,
@@ -24,63 +21,26 @@ pub fn init_panic_hook() {
 enum DispatcherEvent {
     ChannelOpen,
 }
-#[wasm_bindgen]
-
-pub struct Eventer {
-    channels: MessageChannels,
-    dispatcher: Option<Dispatcher>,
-}
-
-impl Eventer {
-
-
-    pub fn channels(&mut self) -> &mut MessageChannels {
-        &mut self.channels
-    }
-}
 
 #[wasm_bindgen]
-impl Eventer {
-    pub fn new() -> Self {
-        let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
-        let runtime = runtime::Runtime::new();
-        let mut multiplexer = PacketMultiplexer::new();
-        let mut builder = MessageChannelsBuilder::new(runtime, pool);
-        builder
-            .register::<Message>(common::MESSAGE_SETTINGS)
-            .unwrap();
+struct WebRTCClient {
+    processor_rx_outgoing: async_channel::Receiver<Box<[u8]>>,
+    processor_tx_incoming: async_channel::Sender<Box<[u8]>>,
 
-        let mut channels = builder.build(&mut multiplexer);
-
-        let dispatcher = Dispatcher::new(multiplexer);
-        Self {
-            channels,
-            dispatcher: Some(dispatcher),
-        }
-    }
-    pub fn run(&mut self) {
-        let mut dispatcher = self.dispatcher.take().unwrap();
-        future_to_promise(async move {
-            dispatcher.run().await;
-            Ok(JsValue::TRUE)
-        });
-    }
-}
-
-#[wasm_bindgen]
-struct Dispatcher {
-    rx_incoming: async_channel::Receiver<Box<[u8]>>,
-    tx_incoming: async_channel::Sender<Box<[u8]>>,
-    incoming: IncomingMultiplexedPackets<BufferPacket<Box<[u8]>>>,
-    outgoing: OutgoingMultiplexedPackets<BufferPacket<Box<[u8]>>>,
+    rtc_rx_incoming: async_channel::Receiver<Box<[u8]>>,
+    rtc_tx_incoming: async_channel::Sender<Box<[u8]>>,
+    
+    address: String,
     channel: RtcDataChannel,
     peer: RtcPeerConnection,
 }
 
-impl Dispatcher {
-    pub fn new(multiplexer: PacketMultiplexer<BufferPacket<Box<[u8]>>>) -> Self {
-        let (incoming, outgoing) = multiplexer.start();
-        let (tx_incoming, rx_incoming) = async_channel::unbounded();
+impl WebRTCClient {
+    pub fn new(
+        address: String,
+        processor_reader: async_channel::Receiver<Box<[u8]>>, 
+        processor_sender: async_channel::Sender<Box<[u8]>>
+    ) -> Self {
         let peer: RtcPeerConnection = RtcPeerConnection::new().unwrap();
         tracing::info!(
             "Created peer connection with state {:?}",
@@ -90,49 +50,44 @@ impl Dispatcher {
         channel_dict.max_retransmits(0).ordered(false);
         let channel: RtcDataChannel =
             peer.create_data_channel_with_data_channel_dict("webudp", &channel_dict);
+        
+        let (rtc_tx_incoming, rtc_rx_incoming) = async_channel::unbounded();
         Self {
+            address,
             peer,
             channel,
-            tx_incoming,
-            rx_incoming,
-            incoming,
-            outgoing,
+            processor_rx_outgoing: processor_reader,
+            processor_tx_incoming: processor_sender,
+            rtc_tx_incoming,
+            rtc_rx_incoming,
         }
     }
 }
 
 #[wasm_bindgen]
-impl Dispatcher {
+impl WebRTCClient {
     pub async fn run(self) {
-        let Dispatcher {
-            rx_incoming,
-            tx_incoming,
-            mut incoming,
-            mut outgoing,
-            channel,
-            peer,
-        } = self.start().await;
+        self.connect().await;
+        let incoming_rx = self.rtc_rx_incoming.clone();
+        let processor_incoming_tx = self.processor_tx_incoming.clone();
+
         let incoming = async move {
-            let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
-            tracing::info!("Dispatcher received channel open. Processing messages");
+            tracing::info!("Incoming message processor started");
             loop {
-                match rx_incoming.recv().await {
+                match incoming_rx.recv().await {
                     Ok(message) => {
-                        let mut packet = pool.acquire();
-                        packet.extend(&message);
-                        incoming.try_send(packet);
+                        processor_incoming_tx.send(message).await.unwrap();
                     }
                     Err(_) => break,
                 }
             }
         };
         let outgoing = async move {
-            let pool = turbulence::BufferPacketPool::new(common::SimpleBufferPool(32));
-            tracing::info!("Dispatcher received channel open. Processing messages");
+            tracing::info!("Outgoing message processor started");
             loop {
-                match outgoing.next().await {
-                    Some(message) => {
-                        channel.send_with_u8_array(message.as_ref()).unwrap();
+                match self.processor_rx_outgoing.recv().await {
+                    Ok(message) => {
+                        self.channel.send_with_u8_array(message.as_ref()).unwrap();
                     }
                     _ => break,
                 }
@@ -141,7 +96,7 @@ impl Dispatcher {
         join!(incoming, outgoing);
     }
 
-    pub async fn start(self) -> Self {
+    async fn connect(&self) {
         let (tx_internal, rx_internal): (
             async_channel::Sender<DispatcherEvent>,
             async_channel::Receiver<DispatcherEvent>,
@@ -149,11 +104,12 @@ impl Dispatcher {
 
         self.channel
             .set_binary_type(RtcDataChannelType::Arraybuffer);
-        let tx_event = self.tx_incoming.clone();
+        
+        let rtc_on_message_tx = self.rtc_tx_incoming.clone();
         let on_message_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
             let arr: js_sys::Uint8Array = js_sys::Uint8Array::new(&event.data());
             let rust_vec = arr.to_vec();
-            let tx = tx_event.clone();
+            let tx = rtc_on_message_tx.clone();
             spawn_local(async move {
                 tx.send(rust_vec.into_boxed_slice()).await.unwrap();
             });
@@ -210,9 +166,7 @@ impl Dispatcher {
         let request_clone = request.clone();
         request.set_response_type(XmlHttpRequestResponseType::Json);
 
-//        let address = "http://localhost:8080/session";
-        let address = "http://192.168.100.135:8080/session";
-        request.open("POST", address).unwrap();
+        request.open("POST", &self.address).unwrap();
         let peer_clone = self.peer.clone();
         let on_request_response_callback: wasm_bindgen::prelude::Closure<dyn FnMut() -> ()> =
             Closure::new(move || match request_clone.status() {
@@ -239,7 +193,7 @@ impl Dispatcher {
                     let sdp_mid: String;
                     unsafe {
                         let candidate_response_js =
-                            Reflect::get(&response, &JsValue::from_str("candidate")).unwrap();
+                             Reflect::get(&response, &JsValue::from_str("candidate")).unwrap();
                         tracing::info!("CandidateJS: {:?}", candidate_response_js);
                         candidate_response =
                             Reflect::get(&candidate_response_js, &JsValue::from_str("candidate"))
@@ -298,6 +252,5 @@ impl Dispatcher {
             Ok(_) => (),
             _ => panic!("Failed"),
         };
-        self
     }
 }

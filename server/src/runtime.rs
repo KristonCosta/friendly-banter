@@ -10,7 +10,7 @@ impl Runtime {
 }
 
 impl turbulence::Runtime for Runtime {
-    type Instant = common::RuntimeInstant;
+    type Instant = common::runtime::RuntimeInstant;
 
     type Sleep = tokio::time::Sleep;
 
@@ -21,15 +21,15 @@ impl turbulence::Runtime for Runtime {
     }
 
     fn now(&self) -> Self::Instant {
-        common::RuntimeInstantHandler::now()
+        common::runtime::RuntimeInstantHandler::now()
     }
 
     fn elapsed(&self, instant: Self::Instant) -> std::time::Duration {
-        common::RuntimeInstantHandler::elapsed(instant)
+        common::runtime::RuntimeInstantHandler::elapsed(instant)
     }
 
     fn duration_between(&self, earlier: Self::Instant, later: Self::Instant) -> std::time::Duration {
-        common::RuntimeInstantHandler::duration_between(earlier, later)
+        common::runtime::RuntimeInstantHandler::duration_between(earlier, later)
     }
 
     fn sleep(&self, duration: std::time::Duration) -> Self::Sleep {
