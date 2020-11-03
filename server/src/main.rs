@@ -9,6 +9,8 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Body, Error, Method, Response, Server, StatusCode,
 };
+use runtime::NativeRuntime;
+use tracing::Level;
 use std::net::SocketAddr;
 use std::str;
 use tokio_compat_02::FutureExt;
@@ -59,8 +61,10 @@ async fn main() {
     let public_port = "localhost:42424".parse().unwrap();
     let session_port: SocketAddr = "192.168.100.135:8080".parse().unwrap();
     */
+    
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
+        .with_max_level(Level::WARN)
         .with_span_events(FmtSpan::CLOSE)
         .init();
     let session_endpoint = rtc_server.session_endpoint();
@@ -83,25 +87,13 @@ async fn main() {
         }
         .compat(),
     );
+    let mut runtime = common::message::MessageProcessor::new(NativeRuntime::new());
 
-    let pool = turbulence::BufferPacketPool::new(SimpleBufferPool(32));
-    let runtime = runtime::Runtime::new();
-    let mut multiplexer = PacketMultiplexer::new();
-    let mut builder = MessageChannelsBuilder::new(runtime, pool);
-    builder
-        .register::<Message>(MESSAGE_SETTINGS)
-        .unwrap();
-
-    let mut channels = builder.build(&mut multiplexer);
-
-    let (tx_outgoing, rx_outgoing): (
-        async_channel::Sender<BufferPacket<Box<[u8]>>>,
-        async_channel::Receiver<BufferPacket<Box<[u8]>>>,
-    ) = async_channel::unbounded();
-    let (mut incoming, mut outgoing) = multiplexer.start();
+    let message_sender = runtime.message_sender().clone();
+    let message_reciever = runtime.message_receiver().clone();
     tokio::spawn(async move {
         loop {
-            let received = match channels.try_async_recv::<Message>().await {
+            let received = match message_reciever.recv().await {
                 Ok(message) => {
                     tracing::info!("Received {:?}", message);
                     match message {
@@ -114,29 +106,22 @@ async fn main() {
             };
             if let Some(message) = received {
                 tracing::info!("Sending {:?} back out", message);
-                channels.try_send(message).unwrap();
-            }
-            channels.flush::<Message>();
-        }
-    });
-    tokio::spawn(async move {
-        loop {
-            match outgoing.next().await {
-                Some(buf) => {
-                    tracing::info!("Queuing pending outgoing message");
-                    tx_outgoing.send(buf).await.unwrap()
-                }
-                _ => break,
+                message_sender.try_send(message).unwrap();
             }
         }
     });
 
+    let byte_receiver = runtime.outgoing_byte_reader();
+    let byte_sender = runtime.incoming_byte_sender();
+    tokio::spawn( async move {
+        runtime.run().await;
+    });
     loop {
         let pending_packet = {
             let recieve = rtc_server.recv().fuse();
             pin_mut!(recieve);
-
-            let pending_send = rx_outgoing.recv().fuse();
+            
+            let pending_send = byte_receiver.recv().fuse();
             pin_mut!(pending_send);
 
             let pending_packet = select! {
@@ -144,9 +129,7 @@ async fn main() {
                     match received {
                         Ok(received) => {
                             tracing::info!("Ingesting incoming message");
-                            let mut packet = pool.acquire();
-                            packet.extend(received.message.as_ref());
-                            incoming.try_send(packet).unwrap();
+                            byte_sender.send(received.message.as_ref().into()).await.unwrap();
                         }
                         Err(err) => {
                             tracing::warn!("Failed to receive message. Error: {}", err);

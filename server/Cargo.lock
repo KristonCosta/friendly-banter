@@ -146,6 +146,7 @@ dependencies = [
  "futures-util",
  "instant",
  "serde",
+ "tracing",
  "turbulence",
 ]
 
