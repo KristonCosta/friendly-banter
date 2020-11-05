@@ -65,14 +65,14 @@ impl Processor {
         for _ in 0..10 {
             match self.message_receiver.try_recv() {
                 Ok(message) => {
-                    tracing::info!("Event: {:?}", message);
+                    
                     match message {
                         Message::Sync => {}
                         Message::Text(txt) => {
                             self.pending_messages.push(txt);
                         }
                         Message::Position(x, y) => {
-                            tracing::info!("Event: {:?}", message);
+                    
                             self.position = (x, y);
                             self.pending_messages.push(format!("{:?}", self.position));
                         }

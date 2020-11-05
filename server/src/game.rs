@@ -64,7 +64,7 @@ impl Universe {
         Self {
             position: (50.0, 50.0),
             velocity: (50.0, 50.0),
-            boundary: (100.0, 80.0),
+            boundary: (500.0, 400.0),
             message_sender: sender,
             timestep: TimeStep::new()
         }
