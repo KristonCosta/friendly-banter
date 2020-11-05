@@ -1,5 +1,4 @@
 use futures_util::{future::FutureExt, pin_mut, select, StreamExt};
-use std::{future::Future, marker::PhantomData};
 use turbulence::{BufferPacket, Packet, PacketPool, Runtime as TRuntime};
 
 use crate::{
@@ -11,6 +10,7 @@ use crate::{
 pub enum Message {
     Sync,
     Text(String),
+    Position(f32, f32),
     Unknown,
 }
 
@@ -114,19 +114,17 @@ where
 
                 pin_mut!(pending_outgoing_byte);
 
-                let sleep_timer = self.runtime.sleep(std::time::Duration::from_millis(10)).fuse();
+                let sleep_timer = self.runtime.sleep(std::time::Duration::from_millis(1000)).fuse();
                 pin_mut!(sleep_timer);
 
                 let action: Action = select! {
                     incoming = pending_incoming_message => {
-                        tracing::info!("Pending incoming message");
                         match incoming {
                             Ok(message) => Action::EmitMessage(message),
                             _ => Action::Error
                         }
                     }
                     outgoing = pending_outgoing_message => {
-                        tracing::info!("Pending outgoing message");
                         match outgoing {
                             Ok(message) => Action::DispatchMessage(message),
                             _ => Action::Error
@@ -134,14 +132,12 @@ where
 
                     },
                     incoming = pending_incoming_byte => {
-                        tracing::info!("Pending incoming byte");
                         match incoming {
                             Ok(bytes) => Action::DispatchBytes(bytes),
                             _ => Action::Error
                         }
                     },
                     outgoing = pending_outgoing_byte => {
-                        tracing::info!("Pending outgoing byte");
                         match outgoing {
                             Some(bytes) => Action::EmitBytes(bytes),
                             _ => Action::Error
@@ -149,7 +145,6 @@ where
                     },
 
                     _ = sleep_timer => {
-                        tracing::info!("flush");
                         Action::Flush
                     }
                 };
@@ -157,13 +152,11 @@ where
             };
             match action {
                 Action::DispatchBytes(bytes) => {
-                    tracing::info!("Pending incoming byte");
                     let mut packet = self.pool.acquire();
                     packet.extend(&bytes);
                     self.incoming_packets.try_send(packet).unwrap();
                 }
                 Action::EmitBytes(buf_bytes) => {
-                    tracing::info!("Pending outgoing byte");
                     let mut bytes = Vec::with_capacity(buf_bytes.len());
                     bytes.extend_from_slice(buf_bytes.as_slice());
                     self.byte_channel
@@ -173,11 +166,9 @@ where
                         .unwrap();
                 }
                 Action::DispatchMessage(message) => {
-                    tracing::info!("Pending outgoing message");
                     self.turbulence_channels.send(message);
                 }
                 Action::EmitMessage(message) => {
-                    tracing::info!("Pending incoming message");
                     self.message_channel.incoming_sender.send(message).await.unwrap();
                 }
                 Action::Error => {

@@ -1,5 +1,3 @@
-
-
 // Stolen from turbulence for now
 #[derive(Debug, Copy, Clone)]
 pub struct SimpleBufferPool(pub usize);

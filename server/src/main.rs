@@ -1,9 +1,10 @@
 mod runtime;
+mod game;
 
-use async_channel::TryRecvError;
-use common::{buffer::SimpleBufferPool, message::{MESSAGE_SETTINGS, Message}};
-use futures::{pin_mut, FutureExt as FExt, StreamExt, TryStreamExt};
+use common::{message::{Message}};
+use futures::{pin_mut, FutureExt as FExt};
 use futures_util::select;
+use game::Universe;
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
@@ -12,10 +13,8 @@ use hyper::{
 use runtime::NativeRuntime;
 use tracing::Level;
 use std::net::SocketAddr;
-use std::str;
 use tokio_compat_02::FutureExt;
 use tracing_subscriber::fmt::format::FmtSpan;
-use turbulence::{BufferPacket, MessageChannelsBuilder, Packet, PacketMultiplexer, PacketPool};
 use webrtc_unreliable::{MessageType, Server as RtcServer};
 
 #[derive(Clone)]
@@ -36,6 +35,7 @@ impl Router {
             remote_address,
             request,
         };
+
         match (
             handler_request.request.method(),
             handler_request.request.uri().path(),
@@ -52,19 +52,19 @@ impl Router {
 }
 #[tokio::main]
 async fn main() {
-    
+    /*
     let data_port = "127.0.0.1:42424".parse().unwrap();
     let public_port = "127.0.0.1:42424".parse().unwrap();
     let session_port: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    /*
-    let data_port = "localhost:42424".parse().unwrap();
-    let public_port = "localhost:42424".parse().unwrap();
-    let session_port: SocketAddr = "192.168.100.135:8080".parse().unwrap();
     */
+    let data_port = "192.168.100.124:42424".parse().unwrap();
+    let public_port = "192.168.100.124:42424".parse().unwrap();
+    let session_port: SocketAddr = "192.168.100.124:8080".parse().unwrap();
     
+
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
-        .with_max_level(Level::WARN)
+     //   .with_max_level(Level::WARN)
         .with_span_events(FmtSpan::CLOSE)
         .init();
     let session_endpoint = rtc_server.session_endpoint();
@@ -95,20 +95,23 @@ async fn main() {
         loop {
             let received = match message_reciever.recv().await {
                 Ok(message) => {
-                    tracing::info!("Received {:?}", message);
                     match message {
-                        Message::Sync => None,
                         Message::Text(_) => Some(message),
-                        Message::Unknown => None,
+                        _ => None,
                     }
                 }
                 Err(_) => None,
             };
             if let Some(message) = received {
-                tracing::info!("Sending {:?} back out", message);
                 message_sender.try_send(message).unwrap();
             }
         }
+    });
+
+    let mut universe = Universe::new(runtime.message_sender().clone());
+
+    tokio::spawn( async move {
+        universe.run().await;
     });
 
     let byte_receiver = runtime.outgoing_byte_reader();
@@ -126,13 +129,12 @@ async fn main() {
 
             let pending_packet = select! {
                 received = recieve => {
+                    tracing::info!("Event");
                     match received {
                         Ok(received) => {
-                            tracing::info!("Ingesting incoming message");
                             byte_sender.send(received.message.as_ref().into()).await.unwrap();
                         }
                         Err(err) => {
-                            tracing::warn!("Failed to receive message. Error: {}", err);
                         }
                     };
                     None
@@ -140,7 +142,6 @@ async fn main() {
                 pending_packet = pending_send => {
                     match pending_packet {
                         Ok(packet) => {
-                            tracing::info!("Sending pending outgoing message");
                             Some(packet)
                         },
                         Err(_) => None,

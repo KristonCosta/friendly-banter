@@ -1,10 +1,9 @@
-use crate::{runtime::WasmRuntime, WebRTCClient};
-
+use crate::{client::WebRTCClient, runtime::WasmRuntime};
 use common::message::{Message, MessageProcessor};
 use futures::join;
-use js_sys::Array;
+use js_sys::{Array, Promise};
 use wasm_bindgen::{prelude::*, JsCast};
-use wasm_bindgen_futures::{future_to_promise};
+use wasm_bindgen_futures::future_to_promise;
 
 #[wasm_bindgen]
 extern "C" {
@@ -15,10 +14,14 @@ extern "C" {
 #[wasm_bindgen]
 pub struct Processor {
     tx: async_channel::Sender<Message>,
-    
+
     message_receiver: async_channel::Receiver<Message>,
 
     pending_messages: Vec<String>,
+
+    position: (f32, f32),
+
+    _promise: Promise,
 }
 
 #[wasm_bindgen]
@@ -27,7 +30,7 @@ impl Processor {
         let (tx, rx) = async_channel::unbounded();
         let mut message_processor = MessageProcessor::new(WasmRuntime::new());
         let client = WebRTCClient::new(
-            "http://127.0.0.1:8080/session".to_string(),
+            "http://192.168.100.124:8080/session".to_string(),
             message_processor.outgoing_byte_reader(),
             message_processor.incoming_byte_sender(),
         );
@@ -37,38 +40,44 @@ impl Processor {
         let queued_messages = rx;
         let message_sender = message_processor.message_sender().clone();
 
-        future_to_promise(async move {
+        let promise = future_to_promise(async move {
             let dispatcher = async move {
                 loop {
                     for message in queued_messages.recv().await {
                         tracing::info!("Processor sending message {:?}", message);
-                        message_sender.send(message).await;
+                        message_sender.send(message).await.unwrap();
                     }
                 }
-                
             };
             join![client.run(), message_processor.run(), dispatcher];
             Ok(JsValue::UNDEFINED)
         });
         Self {
-            tx, 
+            tx,
             message_receiver: inner_receiver,
             pending_messages: Vec::with_capacity(100),
+            position: (50.0, 50.0),
+            _promise: promise,
         }
     }
 
     pub fn get_pending(&mut self) -> JSRustVec {
-        for _ in 0..100 {
+        for _ in 0..10 {
             match self.message_receiver.try_recv() {
                 Ok(message) => {
+                    tracing::info!("Event: {:?}", message);
                     match message {
                         Message::Sync => {}
                         Message::Text(txt) => {
                             self.pending_messages.push(txt);
                         }
+                        Message::Position(x, y) => {
+                            tracing::info!("Event: {:?}", message);
+                            self.position = (x, y);
+                            self.pending_messages.push(format!("{:?}", self.position));
+                        }
                         Message::Unknown => {}
                     }
-                    
                 }
                 Err(_) => {
                     break;
@@ -77,6 +86,16 @@ impl Processor {
         }
         let my_vec: Array = self.pending_messages.drain(..).map(JsValue::from).collect();
         my_vec.unchecked_into::<JSRustVec>()
+    }
+
+    pub fn x(&mut self) -> f32 {
+        self.get_pending();
+        self.position.0
+    }
+
+    pub fn y(&mut self) -> f32 {
+        self.get_pending();
+        self.position.1
     }
 
     pub fn send(&self, string: String) {

@@ -22,8 +22,6 @@ impl RuntimeInstantHandler {
     }
 }
 
-
-
 pub trait Runtime: Clone + Send + Sync  {
     type Sleep: Future<Output = ()> + Send;
 

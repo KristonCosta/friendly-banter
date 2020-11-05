@@ -1,10 +1,5 @@
-#![feature(async_closure)]
-mod processor;
-mod runtime;
-mod utils;
-
-use futures::{join};
-use js_sys::{Reflect};
+use futures::join;
+use js_sys::Reflect;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
@@ -13,23 +8,18 @@ use web_sys::{
     XmlHttpRequest, XmlHttpRequestResponseType,
 };
 
-#[wasm_bindgen]
-pub fn init_panic_hook() {
-    utils::set_hooks();
-}
-
 enum DispatcherEvent {
     ChannelOpen,
 }
 
 #[wasm_bindgen]
-struct WebRTCClient {
+pub struct WebRTCClient {
     processor_rx_outgoing: async_channel::Receiver<Box<[u8]>>,
     processor_tx_incoming: async_channel::Sender<Box<[u8]>>,
 
     rtc_rx_incoming: async_channel::Receiver<Box<[u8]>>,
     rtc_tx_incoming: async_channel::Sender<Box<[u8]>>,
-    
+
     address: String,
     channel: RtcDataChannel,
     peer: RtcPeerConnection,
@@ -38,8 +28,8 @@ struct WebRTCClient {
 impl WebRTCClient {
     pub fn new(
         address: String,
-        processor_reader: async_channel::Receiver<Box<[u8]>>, 
-        processor_sender: async_channel::Sender<Box<[u8]>>
+        processor_reader: async_channel::Receiver<Box<[u8]>>,
+        processor_sender: async_channel::Sender<Box<[u8]>>,
     ) -> Self {
         let peer: RtcPeerConnection = RtcPeerConnection::new().unwrap();
         tracing::info!(
@@ -50,7 +40,7 @@ impl WebRTCClient {
         channel_dict.max_retransmits(0).ordered(false);
         let channel: RtcDataChannel =
             peer.create_data_channel_with_data_channel_dict("webudp", &channel_dict);
-        
+
         let (rtc_tx_incoming, rtc_rx_incoming) = async_channel::unbounded();
         Self {
             address,
@@ -104,7 +94,7 @@ impl WebRTCClient {
 
         self.channel
             .set_binary_type(RtcDataChannelType::Arraybuffer);
-        
+
         let rtc_on_message_tx = self.rtc_tx_incoming.clone();
         let on_message_callback = Closure::wrap(Box::new(move |event: MessageEvent| {
             let arr: js_sys::Uint8Array = js_sys::Uint8Array::new(&event.data());
@@ -148,12 +138,12 @@ impl WebRTCClient {
 
         let offer = JsFuture::from(self.peer.create_offer()).await.unwrap();
         let offer_sdp;
-        unsafe {
-            offer_sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))
-                .unwrap()
-                .as_string()
-                .unwrap();
-        }
+
+        offer_sdp = Reflect::get(&offer, &JsValue::from_str("sdp"))
+            .unwrap()
+            .as_string()
+            .unwrap();
+
         tracing::info!("Peer offer {:?}", offer_sdp);
 
         let mut offer_obj = RtcSessionDescriptionInit::new(RtcSdpType::Offer);
@@ -175,14 +165,13 @@ impl WebRTCClient {
                     let response = request_clone.response().unwrap();
                     tracing::info!("{:?}", response);
                     let answer_sdp;
-                    unsafe {
-                        let answer_obj =
-                            Reflect::get(&response, &JsValue::from_str("answer")).unwrap();
-                        answer_sdp = Reflect::get(&answer_obj, &JsValue::from_str("sdp"))
-                            .unwrap()
-                            .as_string()
-                            .unwrap();
-                    }
+
+                    let answer_obj = Reflect::get(&response, &JsValue::from_str("answer")).unwrap();
+                    answer_sdp = Reflect::get(&answer_obj, &JsValue::from_str("sdp"))
+                        .unwrap()
+                        .as_string()
+                        .unwrap();
+
                     tracing::info!("1");
                     let mut session_description_init =
                         RtcSessionDescriptionInit::new(RtcSdpType::Answer);
@@ -191,39 +180,36 @@ impl WebRTCClient {
                     let candidate_response: String;
                     let sdp_m_line_index: u16;
                     let sdp_mid: String;
-                    unsafe {
-                        let candidate_response_js =
-                             Reflect::get(&response, &JsValue::from_str("candidate")).unwrap();
-                        tracing::info!("CandidateJS: {:?}", candidate_response_js);
-                        candidate_response =
-                            Reflect::get(&candidate_response_js, &JsValue::from_str("candidate"))
-                                .unwrap()
-                                .as_string()
-                                .unwrap();
-                        sdp_m_line_index = Reflect::get(
-                            &candidate_response_js,
-                            &JsValue::from_str("sdpMLineIndex"),
-                        )
-                        .unwrap()
-                        .as_f64()
-                        .unwrap() as u16;
 
-                        sdp_mid =
-                            Reflect::get(&candidate_response_js, &JsValue::from_str("sdpMid"))
-                                .unwrap()
-                                .as_string()
-                                .unwrap();
-                    }
+                    let candidate_response_js =
+                        Reflect::get(&response, &JsValue::from_str("candidate")).unwrap();
+                    tracing::info!("CandidateJS: {:?}", candidate_response_js);
+                    candidate_response =
+                        Reflect::get(&candidate_response_js, &JsValue::from_str("candidate"))
+                            .unwrap()
+                            .as_string()
+                            .unwrap();
+                    sdp_m_line_index =
+                        Reflect::get(&candidate_response_js, &JsValue::from_str("sdpMLineIndex"))
+                            .unwrap()
+                            .as_f64()
+                            .unwrap() as u16;
+
+                    sdp_mid = Reflect::get(&candidate_response_js, &JsValue::from_str("sdpMid"))
+                        .unwrap()
+                        .as_string()
+                        .unwrap();
 
                     tracing::info!("Candidate: {:?}", candidate_response);
                     let mut candidate = RtcIceCandidateInit::new(&candidate_response);
                     candidate.sdp_m_line_index(Some(sdp_m_line_index));
                     candidate.sdp_mid(Some(&sdp_mid));
-                    let another_peer = peer_clone.clone();
+                    
                     let ice_closure = Closure::new(move |_| {
                         tracing::info!("Set ice closure");
                     });
                     let another_peer = peer_clone.clone();
+                    
                     let description_closure = Closure::new(move |_| {
                         tracing::info!("Set the remote description");
                         another_peer
