@@ -9,6 +9,7 @@ export class ProcessorService {
   public processor: Processor;
 
   constructor() { 
+    window['myService'] = this;
     this.processor = Processor.start();
   }
 }

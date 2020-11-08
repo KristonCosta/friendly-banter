@@ -1,5 +1,5 @@
 import { Component, ElementRef, HostListener, Input, NgZone, OnDestroy, OnInit } from '@angular/core';
-import { Application, Rectangle, Sprite, Texture } from 'pixi.js';
+import { Application, Circle, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import { ProcessorService } from '../processor.service';
 
 @Component({
@@ -13,7 +13,9 @@ export class PixiComponent implements OnInit, OnDestroy {
 
   constructor(private elementRef: ElementRef, private ngZone: NgZone, private processor: ProcessorService) {}
 
-  private rect: Sprite;
+  // private entities: Map<number, Sprite> = new Map();
+  // private rect: Sprite;
+  private graphics: Graphics;
   private vel = 10;
 
   init() {
@@ -22,11 +24,8 @@ export class PixiComponent implements OnInit, OnDestroy {
         width: 500, 
         height: 400
       });
-      this.rect = Sprite.from(Texture.WHITE);
-      this.rect.width = 10;
-      this.rect.height = 10;
-      this.rect.tint = 0xFF0000;
-      this.app.stage.addChild(this.rect);
+      this.graphics = new Graphics();
+      this.app.stage.addChild(this.graphics);
       this.app.ticker
     });
     this.elementRef.nativeElement.appendChild(this.app.view);
@@ -38,8 +37,14 @@ export class PixiComponent implements OnInit, OnDestroy {
   }
 
   tick(delta: number): void {
-    this.rect.x = this.processor.processor.x();
-    this.rect.y = this.processor.processor.y();
+    this.graphics.beginFill(0x288b22);
+    this.processor.processor.state().forEach((value, index) => {
+      if (value['object_info'].hasOwnProperty('Tree')) {
+        let props = value['object_info'].Tree 
+        this.graphics.drawCircle(props['position'][0], props['position'][1], props['size']);
+      }
+    });
+    this.graphics.endFill();
   }
 
 

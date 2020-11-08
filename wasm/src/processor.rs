@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use crate::{client::WebRTCClient, runtime::WasmRuntime};
-use common::message::{Message, MessageProcessor};
+use common::message::{Message, MessageProcessor, Object};
 use futures::join;
 use js_sys::{Array, Promise};
 use wasm_bindgen::{prelude::*, JsCast};
@@ -22,6 +24,8 @@ pub struct Processor {
     position: (f32, f32),
 
     _promise: Promise,
+
+    state: HashMap<u32, Object>,
 }
 
 #[wasm_bindgen]
@@ -58,34 +62,39 @@ impl Processor {
             pending_messages: Vec::with_capacity(100),
             position: (50.0, 50.0),
             _promise: promise,
+            state: HashMap::new(),
         }
     }
 
     pub fn get_pending(&mut self) -> JSRustVec {
         for _ in 0..10 {
             match self.message_receiver.try_recv() {
-                Ok(message) => {
-                    
-                    match message {
-                        Message::Sync => {}
-                        Message::Text(txt) => {
-                            self.pending_messages.push(txt);
-                        }
-                        Message::Position(x, y) => {
-                    
-                            self.position = (x, y);
-                            self.pending_messages.push(format!("{:?}", self.position));
-                        }
-                        Message::Unknown => {}
+                Ok(message) => match message {
+                    Message::Sync => {}
+                    Message::Text(txt) => {
+                        self.pending_messages.push(txt);
                     }
-                }
-                Err(_) => {
+                    Message::Position(x, y) => {
+                        self.position = (x, y);
+                        self.pending_messages.push(format!("{:?}", self.position));
+                    }
+                    Message::Unknown => {}
+                    Message::State(object) => {
+                        self.state.insert(object.id, object);
+                    }
+                },
+                Err(e) => {
                     break;
                 }
             }
         }
         let my_vec: Array = self.pending_messages.drain(..).map(JsValue::from).collect();
         my_vec.unchecked_into::<JSRustVec>()
+    }
+
+    pub fn state(&mut self) -> JsValue {
+        self.get_pending();
+        serde_wasm_bindgen::to_value(&self.state).unwrap()
     }
 
     pub fn x(&mut self) -> f32 {

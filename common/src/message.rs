@@ -6,19 +6,47 @@ use crate::{
     runtime::{Runtime, RuntimeImpl},
 };
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone)]
+pub struct Tree {
+    pub position: (f32, f32), 
+    pub size: f32
+}
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct Player {
+    pub position: (f32, f32), 
+    pub color: String,
+}
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum ObjectInfo {
+    Tree(Tree),
+    Player(Player),
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct Object {
+    pub id: u32,
+    pub object_info: ObjectInfo,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct GameState {
+    pub objects: Vec<Object>
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub enum Message {
     Sync,
     Text(String),
     Position(f32, f32),
+    State(Object),
     Unknown,
 }
 
 pub const MESSAGE_SETTINGS: turbulence::MessageChannelSettings = turbulence::MessageChannelSettings {
     channel: 1,
     channel_mode: turbulence::MessageChannelMode::Unreliable,
-    message_buffer_size: 8,
-    packet_buffer_size: 8,
+    message_buffer_size: 64,
+    packet_buffer_size: 64,
 };
 
 pub struct BidirectionalChannel<T> {

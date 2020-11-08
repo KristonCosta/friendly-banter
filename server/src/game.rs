@@ -1,6 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{collections::HashMap, time::{Duration, Instant}};
 
-use common::message::Message;
+use common::message::{GameState, Message, Object, ObjectInfo, Tree};
+use rand::Rng;
 
 
 type FP = f32;
@@ -52,21 +53,34 @@ impl TimeStep {
 
 
 pub struct Universe {
-    position: (f32, f32),
-    velocity: (f32, f32),
-    boundary: (f32, f32),
     message_sender: async_channel::Sender<Message>,
     timestep: TimeStep,
+    state: HashMap<u32, Object>,
 }
 
 impl Universe {
+    fn make_tree(id: u32) -> Object {
+        let mut rng = rand::thread_rng();
+        Object {
+            id, 
+            object_info: ObjectInfo::Tree(
+                Tree {
+                    position: (rng.gen_range(0.0, 500.0), rng.gen_range(0.0, 400.0)),
+                    size: rng.gen_range(3.0, 10.0),
+                }
+            )
+        }
+    }
+
     pub fn new(sender: async_channel::Sender<Message>) -> Self {
+        let mut state = HashMap::new();
+        for i in 0..20 {
+            state.insert(i, Universe::make_tree(i));
+        }
         Self {
-            position: (50.0, 50.0),
-            velocity: (50.0, 50.0),
-            boundary: (500.0, 400.0),
             message_sender: sender,
-            timestep: TimeStep::new()
+            timestep: TimeStep::new(),
+            state
         }
     }
 
@@ -74,24 +88,10 @@ impl Universe {
         // I'm not going for efficiency here...
         loop {
             tokio::time::sleep(Duration::from_millis(16)).await;
-            let delta = self.timestep.delta();
-            self.position.0 += self.velocity.0 * delta * 0.001;
-            self.position.1 += self.velocity.1 * delta * 0.001;
-            if self.position.0 <= 0.0 {
-                self.position.0 = 0.1;
-                self.velocity.0 *= -1.0; 
-            } else if self.position.0 >= self.boundary.0 {
-                self.position.0 = self.boundary.0;
-                self.velocity.0 *= -1.0; 
+            for obj in self.state.values() {
+                self.message_sender.send(Message::State(obj.clone())).await.unwrap();
             }
-            if self.position.1 <= 0.0 {
-                self.position.1 = 0.1;
-                self.velocity.1 *= -1.0; 
-            } else if self.position.1 >= self.boundary.1 {
-                self.position.1 = self.boundary.1;
-                self.velocity.1 *= -1.0; 
-            }
-            self.message_sender.send(Message::Position(self.position.0, self.position.1)).await.unwrap();
+            
         }
         
 
