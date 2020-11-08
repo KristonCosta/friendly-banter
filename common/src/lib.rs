@@ -2,3 +2,4 @@
 pub mod runtime;
 pub mod message;
 pub mod buffer;
+pub mod multiplexer;

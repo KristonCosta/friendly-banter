@@ -1,8 +1,16 @@
-use std::{collections::HashMap, time::{Duration, Instant}};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 
-use common::message::{GameState, Message, Object, ObjectInfo, Tree};
+use async_channel::{Receiver, Sender};
+use common::message::{
+    GameState, Message, Object, ObjectInfo, ReliableMessage, SignedMessage, Tree,
+};
 use rand::Rng;
 
+use crate::InternalMessage;
 
 type FP = f32;
 const MS_PER_UPDATE: FP = 0.5;
@@ -51,49 +59,137 @@ impl TimeStep {
     }
 }
 
+pub struct ChannelBundle {
+    pub reliable_sender: Sender<SignedMessage<ReliableMessage>>,
+    pub reliable_receiver: Receiver<SignedMessage<ReliableMessage>>,
+    pub message_sender: Sender<SignedMessage<Message>>,
+    pub message_receiver: Receiver<SignedMessage<Message>>,
+    pub internal_receiver: Receiver<InternalMessage>,
+}
+
+#[derive(PartialEq)]
+pub enum ConnectionState {
+    Connecting,
+    Connected,
+    Disconnected,
+}
 
 pub struct Universe {
-    message_sender: async_channel::Sender<Message>,
+    bundle: ChannelBundle,
     timestep: TimeStep,
     state: HashMap<u32, Object>,
+    connected_clients: HashMap<usize, ConnectionState>,
 }
 
 impl Universe {
     fn make_tree(id: u32) -> Object {
         let mut rng = rand::thread_rng();
         Object {
-            id, 
-            object_info: ObjectInfo::Tree(
-                Tree {
-                    position: (rng.gen_range(0.0, 500.0), rng.gen_range(0.0, 400.0)),
-                    size: rng.gen_range(3.0, 10.0),
-                }
-            )
+            id,
+            object_info: ObjectInfo::Tree(Tree {
+                position: (rng.gen_range(0.0, 500.0), rng.gen_range(0.0, 400.0)),
+                size: rng.gen_range(3.0, 10.0),
+            }),
         }
     }
 
-    pub fn new(sender: async_channel::Sender<Message>) -> Self {
+    pub fn refresh_clients(&mut self, clients: HashSet<usize>) {
+        self.connected_clients.iter_mut().for_each(|x| {
+            if !clients.contains(x.0) {
+                *x.1 = ConnectionState::Disconnected;
+            }
+        });
+
+        for client in clients {
+            if !self.connected_clients.contains_key(&client) {
+                self.connected_clients
+                    .insert(client, ConnectionState::Connecting);
+            }
+        }
+    }
+
+    pub fn new(bundle: ChannelBundle) -> Self {
         let mut state = HashMap::new();
         for i in 0..20 {
             state.insert(i, Universe::make_tree(i));
         }
         Self {
-            message_sender: sender,
+            bundle,
             timestep: TimeStep::new(),
-            state
+            connected_clients: HashMap::new(),
+            state,
+        }
+    }
+
+    async fn send_game_state(&mut self, target: usize) {
+        tracing::info!("Sending game state {:?}", target);
+        self.bundle.reliable_sender.send(SignedMessage {
+            id: target, 
+            message: ReliableMessage::State(self.state.clone())
+        }).await.unwrap();
+    } 
+
+    async fn client_tick(&mut self) {
+        if let Ok(message) = self.bundle.internal_receiver.try_recv() {
+            match message {
+                InternalMessage::ClientSnapshot(clients) => {
+                    tracing::info!("Received client snapshot: {:?}", clients);
+                    self.refresh_clients(clients);
+                    let disconnected_clients: Vec<usize> = self
+                        .connected_clients
+                        .iter()
+                        .filter(|&(_, state)| *state == ConnectionState::Disconnected)
+                        .map(|(addr, _)| *addr)
+                        .collect();
+                    let new_clients: Vec<usize> = self
+                        .connected_clients
+                        .iter()
+                        .filter(|&(_, state)| *state == ConnectionState::Connecting)
+                        .map(|(addr, _)| *addr)
+                        .collect();
+                    let current_clients: Vec<usize> = self
+                        .connected_clients
+                        .iter()
+                        .filter(|&(_, state)| *state == ConnectionState::Connected)
+                        .map(|(addr, _)| *addr)
+                        .collect();
+                
+                    for disconnected in disconnected_clients {
+                        for client in &current_clients {
+                            self.bundle
+                            .reliable_sender
+                            .send(SignedMessage::<ReliableMessage> {
+                                id: *client,
+                                message: ReliableMessage::Disconnected(disconnected.to_string()),
+                            }).await.unwrap();
+                        }
+                    }
+                    for connected in new_clients {
+                        self.bundle.reliable_sender.send(SignedMessage {
+                            id: connected, 
+                            message: ReliableMessage::Connect,
+                        }).await.unwrap();
+                        self.send_game_state(connected).await;
+                        for client in &current_clients {
+                            self.bundle
+                            .reliable_sender
+                            .send(SignedMessage::<ReliableMessage> {
+                                id: *client,
+                                message: ReliableMessage::Connected(connected.to_string()),
+                            }).await.unwrap();
+                        }
+                    }            
+                }
+            }
         }
     }
 
     pub async fn run(&mut self) {
         // I'm not going for efficiency here...
+        
         loop {
             tokio::time::sleep(Duration::from_millis(16)).await;
-            for obj in self.state.values() {
-                self.message_sender.send(Message::State(obj.clone())).await.unwrap();
-            }
-            
+            self.client_tick().await;    
         }
-        
-
     }
 }

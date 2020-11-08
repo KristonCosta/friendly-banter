@@ -1,3 +1,4 @@
+use common::message::SignedMessage;
 use futures::join;
 use js_sys::Reflect;
 use wasm_bindgen::{prelude::*, JsCast};
@@ -14,7 +15,7 @@ enum DispatcherEvent {
 
 #[wasm_bindgen]
 pub struct WebRTCClient {
-    processor_rx_outgoing: async_channel::Receiver<Box<[u8]>>,
+    processor_rx_outgoing: async_channel::Receiver<SignedMessage<Box<[u8]>>>,
     processor_tx_incoming: async_channel::Sender<Box<[u8]>>,
 
     rtc_rx_incoming: async_channel::Receiver<Box<[u8]>>,
@@ -28,7 +29,7 @@ pub struct WebRTCClient {
 impl WebRTCClient {
     pub fn new(
         address: String,
-        processor_reader: async_channel::Receiver<Box<[u8]>>,
+        processor_reader: async_channel::Receiver<SignedMessage<Box<[u8]>>>,
         processor_sender: async_channel::Sender<Box<[u8]>>,
     ) -> Self {
         let peer: RtcPeerConnection = RtcPeerConnection::new().unwrap();
@@ -77,7 +78,9 @@ impl WebRTCClient {
             loop {
                 match self.processor_rx_outgoing.recv().await {
                     Ok(message) => {
-                        self.channel.send_with_u8_array(message.as_ref()).unwrap();
+                        self.channel
+                            .send_with_u8_array(message.message.as_ref())
+                            .unwrap();
                     }
                     _ => break,
                 }
@@ -204,12 +207,12 @@ impl WebRTCClient {
                     let mut candidate = RtcIceCandidateInit::new(&candidate_response);
                     candidate.sdp_m_line_index(Some(sdp_m_line_index));
                     candidate.sdp_mid(Some(&sdp_mid));
-                    
+
                     let ice_closure = Closure::new(move |_| {
                         tracing::info!("Set ice closure");
                     });
                     let another_peer = peer_clone.clone();
-                    
+
                     let description_closure = Closure::new(move |_| {
                         tracing::info!("Set the remote description");
                         another_peer

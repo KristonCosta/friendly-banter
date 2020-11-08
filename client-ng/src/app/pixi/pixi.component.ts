@@ -1,6 +1,19 @@
 import { Component, ElementRef, HostListener, Input, NgZone, OnDestroy, OnInit } from '@angular/core';
-import { Application, Circle, Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
+import { Application, Circle, Graphics, Rectangle, RenderTexture, Sprite, Texture } from 'pixi.js';
 import { ProcessorService } from '../processor.service';
+
+const generateCircleTexture = (renderer, color) => {
+  const gfx = new Graphics();
+  const texture = RenderTexture.create({width: 10, height: 10});
+
+  gfx.beginFill(color);
+  gfx.drawCircle(5, 5, 5);
+  gfx.endFill();
+
+  renderer.render(gfx, texture);
+
+  return texture;
+}
 
 @Component({
   selector: 'app-pixi',
@@ -16,17 +29,17 @@ export class PixiComponent implements OnInit, OnDestroy {
   // private entities: Map<number, Sprite> = new Map();
   // private rect: Sprite;
   private graphics: Graphics;
+  private texture: any;
   private vel = 10;
-
+  private lookup = new Map<number, Sprite>();
   init() {
     this.ngZone.runOutsideAngular(() => {
       this.app = new Application({
         width: 500, 
         height: 400
       });
-      this.graphics = new Graphics();
-      this.app.stage.addChild(this.graphics);
-      this.app.ticker
+      
+      this.texture = generateCircleTexture(this.app.renderer, 0x288b22);
     });
     this.elementRef.nativeElement.appendChild(this.app.view);
     this.app.ticker.add(delta => this.tick(delta));
@@ -35,16 +48,30 @@ export class PixiComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.init();
   }
+  
 
   tick(delta: number): void {
-    this.graphics.beginFill(0x288b22);
     this.processor.processor.state().forEach((value, index) => {
+      const id = value['id'];
+      
       if (value['object_info'].hasOwnProperty('Tree')) {
         let props = value['object_info'].Tree 
-        this.graphics.drawCircle(props['position'][0], props['position'][1], props['size']);
+        const x = props['position'][0];
+        const y = props['position'][1];
+        if (!this.lookup.has(id)) {
+          const sprite = new Sprite(this.texture);
+          sprite.scale.x = (10/props['size']);
+          sprite.scale.y = (10/props['size']);
+          this.lookup.set(id, sprite);
+          this.app.stage.addChild(sprite);
+        }
+        let sprite = this.lookup.get(id);
+        sprite.position.x = x; 
+        sprite.position.y = y;
+
       }
     });
-    this.graphics.endFill();
+
   }
 
 

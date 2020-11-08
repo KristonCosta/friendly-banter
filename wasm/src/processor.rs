@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{client::WebRTCClient, runtime::WasmRuntime};
-use common::message::{Message, MessageProcessor, Object};
+use common::message::{Message, MessageProcessor, Object, ReliableMessage, SignedMessage};
 use futures::join;
 use js_sys::{Array, Promise};
 use wasm_bindgen::{prelude::*, JsCast};
@@ -16,8 +16,9 @@ extern "C" {
 #[wasm_bindgen]
 pub struct Processor {
     tx: async_channel::Sender<Message>,
-
-    message_receiver: async_channel::Receiver<Message>,
+    
+    message_receiver: async_channel::Receiver<SignedMessage<Message>>,
+    reliable_message_receiver: async_channel::Receiver<SignedMessage<ReliableMessage>>,
 
     pending_messages: Vec<String>,
 
@@ -26,23 +27,28 @@ pub struct Processor {
     _promise: Promise,
 
     state: HashMap<u32, Object>,
+
+    connected: bool,
 }
 
 #[wasm_bindgen]
 impl Processor {
     pub fn start() -> Self {
         let (tx, rx) = async_channel::unbounded();
-        let mut message_processor = MessageProcessor::new(WasmRuntime::new());
+        let (signed_packet_sender, signed_packet_receiver) = async_channel::unbounded();
+        let mut multiplexer = common::multiplexer::ConnectionMultiplexer::new(WasmRuntime::new(), signed_packet_sender);
+        multiplexer.register();
         let client = WebRTCClient::new(
-            "http://192.168.100.124:8080/session".to_string(),
-            message_processor.outgoing_byte_reader(),
-            message_processor.incoming_byte_sender(),
+            "http://127.0.0.1:8080/session".to_string(),
+            signed_packet_receiver,
+            multiplexer.get_raw_channel(1),
         );
 
-        let inner_receiver = message_processor.message_receiver().clone();
+        let inner_receiver = multiplexer.message_receiver();
+        let inner_reliable_receiver = multiplexer.reliable_message_receiver();
 
         let queued_messages = rx;
-        let message_sender = message_processor.message_sender().clone();
+        let message_sender = multiplexer.get_message_channel(1);
 
         let promise = future_to_promise(async move {
             let dispatcher = async move {
@@ -53,12 +59,15 @@ impl Processor {
                     }
                 }
             };
-            join![client.run(), message_processor.run(), dispatcher];
+            join![client.run(), dispatcher];
             Ok(JsValue::UNDEFINED)
         });
+        
         Self {
             tx,
+            connected: false,
             message_receiver: inner_receiver,
+            reliable_message_receiver: inner_reliable_receiver,
             pending_messages: Vec::with_capacity(100),
             position: (50.0, 50.0),
             _promise: promise,
@@ -69,7 +78,7 @@ impl Processor {
     pub fn get_pending(&mut self) -> JSRustVec {
         for _ in 0..10 {
             match self.message_receiver.try_recv() {
-                Ok(message) => match message {
+                Ok(message) => match message.message {
                     Message::Sync => {}
                     Message::Text(txt) => {
                         self.pending_messages.push(txt);
@@ -88,11 +97,40 @@ impl Processor {
                 }
             }
         }
+        for _ in 0..10 {
+            match self.reliable_message_receiver.try_recv() {
+                Ok(message) => match message.message {
+                    ReliableMessage::State(object) => {
+                        tracing::info!("Getting state: {:?}", object);
+                        for (key, value) in object {
+                            self.state.insert(key, value);
+                        }
+                       // self.state = object;
+                    }
+                    ReliableMessage::Disconnected(client) => {
+                        tracing::info!("Disconnected: {:?}", client);
+                    }
+                    ReliableMessage::Connected(client) => {
+                        tracing::info!("Connected: {:?}", client);
+                    }
+                    ReliableMessage::Connect => {
+                        tracing::info!("Connect");
+                        self.connected = true;
+                    }
+                },
+                Err(e) => {
+                    break;
+                }
+            }
+        }
         let my_vec: Array = self.pending_messages.drain(..).map(JsValue::from).collect();
         my_vec.unchecked_into::<JSRustVec>()
     }
 
     pub fn state(&mut self) -> JsValue {
+        if !self.connected {
+            self.send("Hello!".to_string());
+        }
         self.get_pending();
         serde_wasm_bindgen::to_value(&self.state).unwrap()
     }

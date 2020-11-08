@@ -9,3 +9,5 @@ use wasm_bindgen::prelude::*;
 pub fn init_panic_hook() {
     utils::set_hooks();
 }
+
+
