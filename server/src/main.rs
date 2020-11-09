@@ -1,8 +1,8 @@
-#![recursion_limit="512"]
-mod runtime;
+#![recursion_limit = "512"]
 mod game;
+mod runtime;
 
-use common::{message::{BidirectionalChannel, Message, RawMessage, SignedMessage, Target}};
+use common::message::{BidirectionalChannel, Message, RawMessage, SignedMessage, Target};
 use futures::{pin_mut, FutureExt as FExt};
 use futures_util::select;
 use game::{ChannelBundle, Universe};
@@ -12,9 +12,12 @@ use hyper::{
     Body, Error, Method, Response, Server, StatusCode,
 };
 use runtime::NativeRuntime;
-use tracing::Level;
-use std::{collections::{HashMap, HashSet}, net::SocketAddr};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+};
 use tokio_compat_02::FutureExt;
+use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use webrtc_unreliable::{MessageType, Server as RtcServer};
 
@@ -53,25 +56,71 @@ impl Router {
 }
 
 pub enum InternalMessage {
-    ClientSnapshot(HashSet<usize>)
+    ClientSnapshot(HashSet<usize>),
+}
+
+pub struct ClientLookup {
+    client_lookup: HashMap<SocketAddr, usize>,
+    reverse_lookup: HashMap<usize, SocketAddr>,
+}
+
+impl ClientLookup {
+    pub fn new() -> Self {
+        Self {
+            client_lookup: HashMap::new(),
+            reverse_lookup: HashMap::new(),
+        }
+    }
+
+    pub fn register(&mut self, id: usize, socket: SocketAddr) {
+        self.client_lookup.insert(socket, id);
+        self.reverse_lookup.insert(id, socket);
+    }
+
+    pub fn lookup(&self, id: usize) -> Option<&SocketAddr> {
+        self.reverse_lookup.get(&id)
+    }
+
+    pub fn lookup_socket(&self, socket: &SocketAddr) -> Option<&usize> {
+        self.client_lookup.get(socket)
+    }
+
+    pub fn remove(&mut self, socket: &SocketAddr) {
+        if let Some(id) = self.client_lookup.get(socket) {
+            self.reverse_lookup.remove(id);
+        }
+        self.client_lookup.remove(socket);
+    }
+
+    pub fn contains(&self, socket: &SocketAddr) -> bool {
+        self.client_lookup.contains_key(socket)
+    }
+
+    pub fn clients(&self) -> Vec<&SocketAddr> {
+        self.client_lookup.keys().collect()
+    }
+
+    pub fn ids(&self) -> Vec<&usize> {
+        self.reverse_lookup.keys().collect()
+    }
 }
 
 #[tokio::main]
 async fn main() {
-    
+    /*
     let data_port = "127.0.0.1:42424".parse().unwrap();
     let public_port = "127.0.0.1:42424".parse().unwrap();
     let session_port: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+*/
     
-    /*
-    let data_port = "192.168.100.124:42424".parse().unwrap();
-    let public_port = "192.168.100.124:42424".parse().unwrap();
-    let session_port: SocketAddr = "192.168.100.124:8080".parse().unwrap();
-    */
+    let data_port = "192.168.1.12:42424".parse().unwrap();
+    let public_port = "192.168.1.12:42424".parse().unwrap();
+    let session_port: SocketAddr = "192.168.1.12:8080".parse().unwrap();
+    
 
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
-     //   .with_max_level(Level::WARN)
+        //   .with_max_level(Level::WARN)
         .with_span_events(FmtSpan::CLOSE)
         .init();
     let session_endpoint = rtc_server.session_endpoint();
@@ -95,7 +144,8 @@ async fn main() {
         .compat(),
     );
     let (signed_packet_sender, signed_packet_receiver) = async_channel::unbounded();
-    let mut multiplexer = common::multiplexer::ConnectionMultiplexer::new(NativeRuntime::new(), signed_packet_sender);   
+    let mut multiplexer =
+        common::multiplexer::ConnectionMultiplexer::new(NativeRuntime::new(), signed_packet_sender);
 
     let reliable_channel = BidirectionalChannel::new();
     let message_channel = BidirectionalChannel::new();
@@ -109,20 +159,19 @@ async fn main() {
     };
     let mut universe = Universe::new(bundle);
 
-    tokio::spawn( async move {
+    tokio::spawn(async move {
         universe.run().await;
     });
 
     let incoming_message = multiplexer.message_receiver();
     let incoming_reliable_message = multiplexer.reliable_message_receiver();
 
-    let mut client_lookup: HashMap<SocketAddr, usize> = HashMap::new();
-
+    let mut client_lookup = ClientLookup::new();
     loop {
         let pending_packet = {
             let recieve = rtc_server.recv().fuse();
             pin_mut!(recieve);
-            
+
             let pending_send = signed_packet_receiver.recv().fuse();
             pin_mut!(pending_send);
 
@@ -139,13 +188,15 @@ async fn main() {
             pin_mut!(outgoing_message);
             let pending_packet = select! {
                 received = recieve => {
+
                     if let Ok(received) = received {
-                        if !client_lookup.contains_key(&received.remote_addr) {
+                        if !client_lookup.contains(&received.remote_addr) {
+                            tracing::info!("Received {:?}", &received.remote_addr);
                             let id = multiplexer.register();
-                            client_lookup.insert(received.remote_addr, id);
-                            internal_sender.send(InternalMessage::ClientSnapshot(client_lookup.values().map(|x| *x).collect())).await;
+                            client_lookup.register(id, received.remote_addr);
+                            internal_sender.send(InternalMessage::ClientSnapshot(client_lookup.ids().into_iter().map(|x| *x).collect())).await;
                         }
-                        multiplexer.send_raw(Target::Client(*client_lookup.get(&received.remote_addr).unwrap()), received.message.as_ref().into()).await;
+                        multiplexer.send_raw(Target::Client(*client_lookup.lookup_socket(&received.remote_addr).unwrap()), received.message.as_ref().into()).await;
                     }
                     Action::None
                 },
@@ -155,26 +206,26 @@ async fn main() {
                     } else {
                         Action::None
                     }
-                }, 
+                },
                 message = incoming_message => {
-                    if let Ok(message) = message { 
+                    if let Ok(message) = message {
                         message_channel.incoming_sender.send(message).await.unwrap();
                     }
                     Action::None
                 },
                 message = incoming_reliable_message => {
-                    if let Ok(message) = message { 
+                    if let Ok(message) = message {
                         reliable_channel.incoming_sender.send(message).await.unwrap();
                     }
                     Action::None
                 },
-                message = outgoing_reliable_message => { 
+                message = outgoing_reliable_message => {
                     if let Ok(message) = message {
                         multiplexer.send_reliable_message(Target::Client(message.id), message.message).await;
                     }
                     Action::None
                 }
-                message = outgoing_message => { 
+                message = outgoing_message => {
                     if let Ok(message) = message {
                         multiplexer.send_message(Target::Client(message.id), message.message).await;
                     }
@@ -183,23 +234,45 @@ async fn main() {
             };
             pending_packet
         };
+
         if let Action::Send(packet) = pending_packet {
             let clients: Vec<SocketAddr> =
                 rtc_server.connected_clients().map(|x| x.clone()).collect();
-            for client in clients {
-                rtc_server
-                    .send(packet.message.as_ref(), MessageType::Binary, &client)
-                    .await
-                    .unwrap();
+
+            tracing::info!("Sending message {:?}", clients);
+            if let Some(client) = client_lookup.lookup(packet.id) {
+                if rtc_server.is_connected(client) {
+                    rtc_server
+                        .send(packet.message.as_ref(), MessageType::Binary, client)
+                        .await
+                        .unwrap();
+                }
             }
+
+            let mut disconnected = vec![];
+
+            client_lookup
+                .clients()
+                .iter()
+                .filter(|x| !clients.contains(*x))
+                .for_each(|client| {
+                    if let Some(target) = client_lookup.lookup_socket(&client) {
+                        multiplexer.kill(*target);
+                        disconnected.push(*client.clone());
+                    }
+                });
+
+            disconnected.into_iter().for_each(|client| {
+                client_lookup.remove(&client);
+            });
         };
     }
 }
 
 pub enum Action {
-    None, 
-    Send(SignedMessage<RawMessage>), 
-    Incoming()
+    None,
+    Send(SignedMessage<RawMessage>),
+    Incoming(),
 }
 
 mod handlers {

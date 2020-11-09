@@ -44,7 +44,6 @@ pub struct GameState {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum Message {
     Sync,
-    Text(String),
     Position(f32, f32),
     State(Object),
     Unknown,
@@ -55,6 +54,7 @@ pub enum ReliableMessage {
     Disconnected(String),
     Connected(String),
     State(HashMap<u32, Object>),
+    Text(String),
     Connect
 }
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -93,7 +93,7 @@ pub const RELIABLE_MESSAGE_SETTINGS: turbulence::MessageChannelSettings =
                 init_send: 512,
                 wakeup_time: Duration::from_millis(100),
                 initial_rtt: Duration::from_millis(200),
-                max_rtt: Duration::from_secs(2),
+                max_rtt: Duration::from_secs(1),
                 rtt_update_factor: 0.1,
                 rtt_resend_factor: 1.5,
             },
@@ -156,6 +156,7 @@ where
     message_outgoing: Sender<SignedMessage<Message>>,
     reliable_message_outgoing: Sender<SignedMessage<ReliableMessage>>,
     incoming_byte_channel: DirectionalChannel<RawMessage>,
+    internal_channel: DirectionalChannel<InternalMessage>,
 }
 
 enum Action {
@@ -164,14 +165,19 @@ enum Action {
     DispatchMessage(WrappedMessage),
     EmitMessage(WrappedMessage),
     Error,
+    Shutdown,
     Flush,
 }
 
 pub(crate) struct ChannelBundle {
     pub message_sender: Sender<Message>,
     pub byte_sender: Sender<RawMessage>,
-    pub reliable_message_sender: Sender<ReliableMessage>,
-    
+    pub reliable_message_sender: Sender<ReliableMessage>,  
+    pub internal_sender: Sender<InternalMessage>, 
+}
+
+pub enum InternalMessage {
+    Shutdown
 }
 
 impl<R> MessageProcessor<R>
@@ -198,6 +204,7 @@ where
         let message_channel = DirectionalChannel::<Message>::new();
         let reliable_message_channel = DirectionalChannel::<ReliableMessage>::new();
         let incoming_byte_channel = DirectionalChannel::<RawMessage>::new();
+        let internal_channel = DirectionalChannel::<InternalMessage>::new();
 
         MessageProcessor {
             id,
@@ -213,10 +220,11 @@ where
             incoming_byte_channel,
             reliable_message_outgoing, 
             message_outgoing,
+            internal_channel,
         }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) {
         loop {
             let action = {
                 let pending_outgoing_message = self.message_channel.receiver.recv().fuse();
@@ -245,12 +253,15 @@ where
                 pin_mut!(pending_incoming_byte);
 
                 let pending_outgoing_byte = self.outgoing_packets.next().fuse();
-
                 pin_mut!(pending_outgoing_byte);
+
+
+                let pending_internal = self.internal_channel.receiver.recv().fuse();
+                pin_mut!(pending_internal);
 
                 let sleep_timer = self
                     .runtime
-                    .sleep(std::time::Duration::from_millis(1000))
+                    .sleep(std::time::Duration::from_millis(5))
                     .fuse();
                 pin_mut!(sleep_timer);
 
@@ -291,7 +302,16 @@ where
                             _ => Action::Error
                         }
                     },
-
+                    message = pending_internal => { 
+                        match message {
+                            Ok(message) => {
+                                match message {
+                                    InternalMessage::Shutdown => Action::Shutdown
+                                }
+                            }, 
+                            _ => Action::Error
+                        }
+                    },
                     _ = sleep_timer => {
                         Action::Flush
                     }
@@ -346,7 +366,14 @@ where
                 Action::Error => {
                     // panic!("Error in the message processor.");
                 }
-                Action::Flush => self.turbulence_channels.flush::<Message>(),
+                Action::Flush => {
+                    self.turbulence_channels.flush::<ReliableMessage>();
+                    self.turbulence_channels.flush::<Message>();
+                },
+                Action::Shutdown => { 
+                    tracing::info!("Killing message processor");
+                    break; 
+                }
             }
         }
     }
@@ -355,7 +382,8 @@ where
         ChannelBundle {
             message_sender: self.message_channel.sender.clone(),
             reliable_message_sender: self.reliable_message_channel.sender.clone(),
-            byte_sender: self.incoming_byte_channel.sender.clone()
+            byte_sender: self.incoming_byte_channel.sender.clone(),
+            internal_sender: self.internal_channel.sender.clone(),
         }
     }
 }

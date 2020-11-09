@@ -2,7 +2,7 @@ use std::{collections::HashMap};
 
 use async_channel::{Receiver, Sender};
 
-use crate::{message::{MessageProcessorFactory, RawMessage}, message::{ChannelBundle}, message::{Message, ReliableMessage, SignedMessage}, runtime::Runtime, message::Target};
+use crate::{message::{MessageProcessorFactory, RawMessage}, message::{ChannelBundle}, message::{Message, ReliableMessage, SignedMessage}, message::{InternalMessage, Target}, runtime::Runtime};
 
 
 
@@ -40,6 +40,7 @@ where
     }
 
     pub fn register(&mut self) -> usize {
+        tracing::info!("Registering");
         let id = self.next_id;
         self.next_id += 1;
         let mut processor = self.processor_factory.build(id);
@@ -120,5 +121,12 @@ where
 
     pub fn message_receiver(&self) -> Receiver<SignedMessage<Message>> {
         self.message_receiver.clone()
+    }
+
+    pub fn kill(&mut self, target: usize) {
+        if let Some(connection) = self.connections.get(&target) {
+            connection.internal_sender.try_send(InternalMessage::Shutdown).unwrap();
+            self.connections.remove(&target);
+        }
     }
 }

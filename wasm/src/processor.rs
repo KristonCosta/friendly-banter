@@ -16,6 +16,7 @@ extern "C" {
 #[wasm_bindgen]
 pub struct Processor {
     tx: async_channel::Sender<Message>,
+    reliable_tx: async_channel::Sender<ReliableMessage>,
     
     message_receiver: async_channel::Receiver<SignedMessage<Message>>,
     reliable_message_receiver: async_channel::Receiver<SignedMessage<ReliableMessage>>,
@@ -35,11 +36,12 @@ pub struct Processor {
 impl Processor {
     pub fn start() -> Self {
         let (tx, rx) = async_channel::unbounded();
+        let (reliable_tx, reliable_rx) = async_channel::unbounded();
         let (signed_packet_sender, signed_packet_receiver) = async_channel::unbounded();
         let mut multiplexer = common::multiplexer::ConnectionMultiplexer::new(WasmRuntime::new(), signed_packet_sender);
         multiplexer.register();
         let client = WebRTCClient::new(
-            "http://127.0.0.1:8080/session".to_string(),
+            "http://192.168.1.12:8080/session".to_string(),
             signed_packet_receiver,
             multiplexer.get_raw_channel(1),
         );
@@ -49,7 +51,7 @@ impl Processor {
 
         let queued_messages = rx;
         let message_sender = multiplexer.get_message_channel(1);
-
+        let reliable_message_sender = multiplexer.get_reliable_message_channel(1);
         let promise = future_to_promise(async move {
             let dispatcher = async move {
                 loop {
@@ -59,12 +61,21 @@ impl Processor {
                     }
                 }
             };
-            join![client.run(), dispatcher];
+            let reliable_dispatcher = async move {
+                loop {
+                    for message in reliable_rx.recv().await {
+                        tracing::info!("Processor sending message {:?}", message);
+                        reliable_message_sender.send(message).await.unwrap();
+                    }
+                }
+            };
+            join![client.run(), dispatcher, reliable_dispatcher];
             Ok(JsValue::UNDEFINED)
         });
         
         Self {
             tx,
+            reliable_tx,
             connected: false,
             message_receiver: inner_receiver,
             reliable_message_receiver: inner_reliable_receiver,
@@ -75,14 +86,11 @@ impl Processor {
         }
     }
 
-    pub fn get_pending(&mut self) -> JSRustVec {
+    pub fn process_pending(&mut self) {
         for _ in 0..10 {
             match self.message_receiver.try_recv() {
                 Ok(message) => match message.message {
                     Message::Sync => {}
-                    Message::Text(txt) => {
-                        self.pending_messages.push(txt);
-                    }
                     Message::Position(x, y) => {
                         self.position = (x, y);
                         self.pending_messages.push(format!("{:?}", self.position));
@@ -117,13 +125,24 @@ impl Processor {
                         tracing::info!("Connect");
                         self.connected = true;
                     }
+                    ReliableMessage::Text(txt) => {
+                        tracing::info!("Received message: {:?}", txt);
+                        self.pending_messages.push(txt);
+                    }
                 },
                 Err(e) => {
                     break;
                 }
             }
         }
+    }
+    pub fn get_pending(&mut self) -> JSRustVec {
+        self.process_pending();
+        if !self.pending_messages.is_empty() {
+            tracing::info!("Pending: {:?}", self.pending_messages);
+        }
         let my_vec: Array = self.pending_messages.drain(..).map(JsValue::from).collect();
+        
         my_vec.unchecked_into::<JSRustVec>()
     }
 
@@ -131,22 +150,16 @@ impl Processor {
         if !self.connected {
             self.send("Hello!".to_string());
         }
-        self.get_pending();
+        self.process_pending();
         serde_wasm_bindgen::to_value(&self.state).unwrap()
     }
 
-    pub fn x(&mut self) -> f32 {
-        self.get_pending();
-        self.position.0
-    }
-
-    pub fn y(&mut self) -> f32 {
-        self.get_pending();
-        self.position.1
+    pub fn click(&self, x: f32, y: f32) {
+        self.tx.try_send(Message::Position(x, y)).unwrap();
     }
 
     pub fn send(&self, string: String) {
         tracing::info!("Processor sending message {:?}", string);
-        self.tx.try_send(Message::Text(string)).unwrap();
+        self.reliable_tx.try_send(ReliableMessage::Text(string)).unwrap();
     }
 }

@@ -1,15 +1,14 @@
 import { Injectable } from '@angular/core';
 import { Processor } from 'wasm/pkg/wasm';
 
-@Injectable({
-  providedIn: 'root'
-})
+
 export class ProcessorService {
 
   public processor: Processor;
 
   constructor() { 
-    window['myService'] = this;
+    // window['myService'] = this;
+    console.log("STarting processor");
     this.processor = Processor.start();
   }
 }

@@ -123,11 +123,15 @@ impl Universe {
 
     async fn send_game_state(&mut self, target: usize) {
         tracing::info!("Sending game state {:?}", target);
-        self.bundle.reliable_sender.send(SignedMessage {
-            id: target, 
-            message: ReliableMessage::State(self.state.clone())
-        }).await.unwrap();
-    } 
+        self.bundle
+            .reliable_sender
+            .send(SignedMessage {
+                id: target,
+                message: ReliableMessage::State(self.state.clone()),
+            })
+            .await
+            .unwrap();
+    }
 
     async fn client_tick(&mut self) {
         if let Ok(message) = self.bundle.internal_receiver.try_recv() {
@@ -153,32 +157,49 @@ impl Universe {
                         .filter(|&(_, state)| *state == ConnectionState::Connected)
                         .map(|(addr, _)| *addr)
                         .collect();
-                
+
                     for disconnected in disconnected_clients {
                         for client in &current_clients {
                             self.bundle
-                            .reliable_sender
-                            .send(SignedMessage::<ReliableMessage> {
-                                id: *client,
-                                message: ReliableMessage::Disconnected(disconnected.to_string()),
-                            }).await.unwrap();
+                                .reliable_sender
+                                .send(SignedMessage::<ReliableMessage> {
+                                    id: *client,
+                                    message: ReliableMessage::Disconnected(
+                                        disconnected.to_string(),
+                                    ),
+                                })
+                                .await
+                                .unwrap();
                         }
                     }
-                    for connected in new_clients {
-                        self.bundle.reliable_sender.send(SignedMessage {
-                            id: connected, 
-                            message: ReliableMessage::Connect,
-                        }).await.unwrap();
-                        self.send_game_state(connected).await;
+                    for connected in &new_clients {
+                        self.bundle
+                            .reliable_sender
+                            .send(SignedMessage {
+                                id: *connected,
+                                message: ReliableMessage::Connect,
+                            })
+                            .await
+                            .unwrap();
+                        self.send_game_state(*connected).await;
                         for client in &current_clients {
                             self.bundle
-                            .reliable_sender
-                            .send(SignedMessage::<ReliableMessage> {
-                                id: *client,
-                                message: ReliableMessage::Connected(connected.to_string()),
-                            }).await.unwrap();
+                                .reliable_sender
+                                .send(SignedMessage::<ReliableMessage> {
+                                    id: *client,
+                                    message: ReliableMessage::Connected(connected.to_string()),
+                                })
+                                .await
+                                .unwrap();
                         }
-                    }            
+                    }
+                    self.connected_clients.clear();
+                    new_clients.into_iter().for_each(|x| {
+                        self.connected_clients.insert(x, ConnectionState::Connected);
+                    });
+                    current_clients.into_iter().for_each(|x| {
+                        self.connected_clients.insert(x, ConnectionState::Connected);
+                    });
                 }
             }
         }
@@ -186,10 +207,30 @@ impl Universe {
 
     pub async fn run(&mut self) {
         // I'm not going for efficiency here...
-        
+
         loop {
             tokio::time::sleep(Duration::from_millis(16)).await;
-            self.client_tick().await;    
+            if let Ok(message) = self.bundle.message_receiver.try_recv() {
+                match message.message {
+                    Message::Sync => {}
+                    Message::Position(x, y) => {
+                        for (id, _) in &self.connected_clients {
+                            self.bundle
+                                        .reliable_sender
+                                        .send(SignedMessage {
+                                            id: *id,
+                                            message: ReliableMessage::Text(format!("Client {} clicked {:?}", message.id, (x, y))),
+                                        })
+                                        .await
+                                        .unwrap();
+                        }
+                    }
+                    Message::State(_) => {}
+                    Message::Unknown => {}
+                }
+                
+            }
+            self.client_tick().await;
         }
     }
 }

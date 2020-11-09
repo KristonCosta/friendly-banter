@@ -10,8 +10,6 @@ export class AppComponent implements OnInit {
 
   ngOnInit(): void {
     init_panic_hook();
-    Processor.start();
-    console.log("Here");
   }
 
   
