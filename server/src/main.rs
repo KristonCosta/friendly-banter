@@ -2,7 +2,7 @@
 mod game;
 mod runtime;
 
-use common::message::{BidirectionalChannel, Message, RawMessage, SignedMessage, Target};
+use common::message::{RawMessage, SignedMessage, Target};
 use futures::{pin_mut, FutureExt as FExt};
 use futures_util::select;
 use game::{ChannelBundle, Universe};
@@ -17,7 +17,6 @@ use std::{
     net::SocketAddr,
 };
 use tokio_compat_02::FutureExt;
-use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use webrtc_unreliable::{MessageType, Server as RtcServer};
 
@@ -107,22 +106,23 @@ impl ClientLookup {
 
 #[tokio::main]
 async fn main() {
-    /*
-    let data_port = "127.0.0.1:42424".parse().unwrap();
-    let public_port = "127.0.0.1:42424".parse().unwrap();
-    let session_port: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-*/
-    
-    let data_port = "192.168.1.12:42424".parse().unwrap();
-    let public_port = "192.168.1.12:42424".parse().unwrap();
-    let session_port: SocketAddr = "192.168.1.12:8080".parse().unwrap();
-    
-
-    let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
     tracing_subscriber::fmt()
         //   .with_max_level(Level::WARN)
         .with_span_events(FmtSpan::CLOSE)
         .init();
+    tracing::info!("Starting up the game server.");
+    let data_port = "[::0]:42424".parse().unwrap();
+    let public_port = "[::0]:42424".parse().unwrap();
+    let session_port: SocketAddr = "[::0]:8080".parse().unwrap();
+
+/*
+    let data_port = "192.168.1.12:42424".parse().unwrap();
+    let public_port = "192.168.1.12:42424".parse().unwrap();
+    let session_port: SocketAddr = "192.168.1.12:8080".parse().unwrap();
+  */
+
+    let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
+
     let session_endpoint = rtc_server.session_endpoint();
 
     let server = make_service_fn(move |addr_stream: &AddrStream| {
@@ -147,8 +147,8 @@ async fn main() {
     let mut multiplexer =
         common::multiplexer::ConnectionMultiplexer::new(NativeRuntime::new(), signed_packet_sender);
 
-    let reliable_channel = BidirectionalChannel::new();
-    let message_channel = BidirectionalChannel::new();
+    let reliable_channel = common::processor::BidirectionalChannel::new();
+    let message_channel = common::processor::BidirectionalChannel::new();
     let (internal_sender, internal_receiver) = async_channel::unbounded();
     let bundle = ChannelBundle {
         reliable_sender: reliable_channel.outgoing_sender,
@@ -167,6 +167,7 @@ async fn main() {
     let incoming_reliable_message = multiplexer.reliable_message_receiver();
 
     let mut client_lookup = ClientLookup::new();
+    tracing::info!("Game server started.");
     loop {
         let pending_packet = {
             let recieve = rtc_server.recv().fuse();

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{client::WebRTCClient, runtime::WasmRuntime};
-use common::message::{Message, MessageProcessor, Object, ReliableMessage, SignedMessage};
+use common::message::{Message, Object, ReliableMessage, SignedMessage};
 use futures::join;
 use js_sys::{Array, Promise};
 use wasm_bindgen::{prelude::*, JsCast};
@@ -29,6 +29,8 @@ pub struct Processor {
 
     state: HashMap<u32, Object>,
 
+    players: HashMap<u32, (f32, f32)>,
+
     connected: bool,
 }
 
@@ -41,7 +43,7 @@ impl Processor {
         let mut multiplexer = common::multiplexer::ConnectionMultiplexer::new(WasmRuntime::new(), signed_packet_sender);
         multiplexer.register();
         let client = WebRTCClient::new(
-            "http://192.168.1.12:8080/session".to_string(),
+            "http://127.0.0.1:8080/session".to_string(),
             signed_packet_receiver,
             multiplexer.get_raw_channel(1),
         );
@@ -82,6 +84,7 @@ impl Processor {
             pending_messages: Vec::with_capacity(100),
             position: (50.0, 50.0),
             _promise: promise,
+            players: HashMap::new(),
             state: HashMap::new(),
         }
     }
@@ -99,8 +102,9 @@ impl Processor {
                     Message::State(object) => {
                         self.state.insert(object.id, object);
                     }
+                    Message::Player(_, _) => {}
                 },
-                Err(e) => {
+                Err(_) => {
                     break;
                 }
             }
@@ -130,7 +134,7 @@ impl Processor {
                         self.pending_messages.push(txt);
                     }
                 },
-                Err(e) => {
+                Err(_) => {
                     break;
                 }
             }

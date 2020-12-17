@@ -78,7 +78,12 @@ pub struct Universe {
     bundle: ChannelBundle,
     timestep: TimeStep,
     state: HashMap<u32, Object>,
+    players: HashMap<u32, Player>,
     connected_clients: HashMap<usize, ConnectionState>,
+}
+
+struct Player {
+    position: (f32, f32)
 }
 
 impl Universe {
@@ -117,6 +122,7 @@ impl Universe {
             bundle,
             timestep: TimeStep::new(),
             connected_clients: HashMap::new(),
+            players: HashMap::new(),
             state,
         }
     }
@@ -195,6 +201,7 @@ impl Universe {
                     }
                     self.connected_clients.clear();
                     new_clients.into_iter().for_each(|x| {
+                        self.initialize_new_client(x);
                         self.connected_clients.insert(x, ConnectionState::Connected);
                     });
                     current_clients.into_iter().for_each(|x| {
@@ -203,6 +210,13 @@ impl Universe {
                 }
             }
         }
+    }
+
+    pub fn initialize_new_client(&mut self, client_id: usize) {
+        let player = Player {
+            position: (0.0, 0.0)
+        };
+        self.players.insert(client_id as u32, player);
     }
 
     pub async fn run(&mut self) {
@@ -227,10 +241,24 @@ impl Universe {
                     }
                     Message::State(_) => {}
                     Message::Unknown => {}
+                    Message::Player(_, _) => {}
                 }
                 
             }
             self.client_tick().await;
+            for (player, pos) in &self.players {
+                for (id, _) in &self.connected_clients {
+                    self.bundle
+                        .message_sender
+                        .send(SignedMessage {
+                            id: *id,
+                            message: Message::Player(*player, pos.position)
+                        })
+                        .await
+                        .unwrap();
+                }
+            }
+
         }
     }
 }
