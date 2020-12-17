@@ -111,15 +111,17 @@ async fn main() {
         .with_span_events(FmtSpan::CLOSE)
         .init();
     tracing::info!("Starting up the game server.");
-    let data_port = "[::0]:42424".parse().unwrap();
-    let public_port = "[::0]:42424".parse().unwrap();
-    let session_port: SocketAddr = "[::0]:8080".parse().unwrap();
 
-/*
-    let data_port = "192.168.1.12:42424".parse().unwrap();
-    let public_port = "192.168.1.12:42424".parse().unwrap();
-    let session_port: SocketAddr = "192.168.1.12:8080".parse().unwrap();
-  */
+    let data_port = "0.0.0.0:42424".parse().unwrap();
+    let public_port = "127.0.0.1:42424".parse().unwrap();
+    let session_port: SocketAddr = "[::]:8080".parse().unwrap();
+
+    /*
+    let data_port = "[::]:42424".parse().unwrap();
+    let public_port = "[::]:42424".parse().unwrap();
+    let session_port: SocketAddr = "[::]:8080".parse().unwrap();
+    */
+
 
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
 
