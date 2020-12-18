@@ -1,0 +1,26 @@
+apiVersion: "agones.dev/v1"
+kind: GameServer
+metadata:
+  generateName: "friendly-server-"
+spec:
+  ports:
+    - name: session
+      portPolicy: Dynamic
+      containerPort: 8080
+      protocol: TCP
+    - name: rtc
+      portPolicy: Dynamic
+      containerPort: 42424
+  template:
+    spec:
+      containers:
+        - name: game-server-app
+          image: game-server-app
+          imagePullPolicy: Never
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "20m"
+            limits:
+              memory: "32Mi"
+              cpu: "20m"

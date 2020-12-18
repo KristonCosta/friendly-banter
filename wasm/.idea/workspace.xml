@@ -31,16 +31,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="aa62dde5-8631-4aaa-b1a5-ac1bf6a6951e" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/../../server/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../common/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/../../common/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../common/src/buffer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../common/src/buffer.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../common/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../common/src/lib.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../common/src/message.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../common/src/message.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../common/src/multiplexer.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../common/src/multiplexer.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../server/src/game.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/src/game.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../../.gitmodules" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../../agones" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../../server/gameserver.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../server/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../server/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../server/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/Dockerfile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../server/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../wasm/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/../../wasm/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../wasm/src/processor.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../wasm/src/processor.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

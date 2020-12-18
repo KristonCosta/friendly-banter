@@ -1,7 +1,7 @@
 #![recursion_limit = "512"]
 mod game;
 mod runtime;
-
+use std::time::Duration;
 use common::message::{RawMessage, SignedMessage, Target};
 use futures::{pin_mut, FutureExt as FExt};
 use futures_util::select;
@@ -12,13 +12,11 @@ use hyper::{
     Body, Error, Method, Response, Server, StatusCode,
 };
 use runtime::NativeRuntime;
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-};
+use std::{collections::{HashMap, HashSet}, net::SocketAddr, process};
 use tokio_compat_02::FutureExt;
 use tracing_subscriber::fmt::format::FmtSpan;
 use webrtc_unreliable::{MessageType, Server as RtcServer};
+use agones::Sdk;
 
 #[derive(Clone)]
 struct Router {
@@ -106,22 +104,38 @@ impl ClientLookup {
 
 #[tokio::main]
 async fn main() {
+    ctrlc::set_handler(move || {
+        process::exit(1)
+    }).expect("Error setting Ctrl-C handler");
+
     tracing_subscriber::fmt()
         //   .with_max_level(Level::WARN)
         .with_span_events(FmtSpan::CLOSE)
         .init();
     tracing::info!("Starting up the game server.");
-
+    tracing::info!("Starting up the Agones SDK.");
+    let mut sdk = agones::Sdk::new().unwrap();
+    tokio::spawn(
+        async move {
+            loop {
+                match sdk.health() {
+                    (s, Ok(_)) => {
+                        tracing::info!("Health ping sent.");
+                        sdk = s;
+                    },
+                    (s, Err(e)) => {
+                        tracing::info!("Health ping failed to send.");
+                        sdk = s;
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+            .compat(),
+    );
     let data_port = "0.0.0.0:42424".parse().unwrap();
     let public_port = "127.0.0.1:42424".parse().unwrap();
     let session_port: SocketAddr = "[::]:8080".parse().unwrap();
-
-    /*
-    let data_port = "[::]:42424".parse().unwrap();
-    let public_port = "[::]:42424".parse().unwrap();
-    let session_port: SocketAddr = "[::]:8080".parse().unwrap();
-    */
-
 
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
 
