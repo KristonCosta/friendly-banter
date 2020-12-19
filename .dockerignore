@@ -1,3 +1,5 @@
+.git
+**/.idea
 wasm/
 client/
 client-ng/

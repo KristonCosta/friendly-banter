@@ -22,6 +22,7 @@ const generateCircleTexture = (renderer, color) => {
 })
 export class PixiComponent implements OnInit, OnDestroy {
 
+  public address = '';
   public app: Application;
   public messages: Array<String> = new Array();
   constructor(private elementRef: ElementRef, private ngZone: NgZone, private processor: ProcessorService) {}
@@ -39,9 +40,10 @@ export class PixiComponent implements OnInit, OnDestroy {
         height: 400
       });
       this.texture = generateCircleTexture(this.app.renderer, 0x288b22);
+      this.app.ticker.add(delta => this.tick(delta));
     });
     this.elementRef.nativeElement.appendChild(this.app.view);
-    this.app.ticker.add(delta => this.tick(delta));
+    
   }
 
   ngOnInit(): void {
@@ -91,7 +93,14 @@ export class PixiComponent implements OnInit, OnDestroy {
     });
   }
 
+  connect() {
+    console.log("Connecting to ", this.address);
+    this.processor.processor.connect(this.address);
+  }
 
+  disconnect() {
+    this.processor.processor.disconnect();
+  }
 
   destroy() {
     this.app.destroy();

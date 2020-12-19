@@ -1,13 +1,17 @@
-use common::message::SignedMessage;
-use futures::join;
+use common::message::{SignedMessage, InternalMessage};
+use futures::select;
+use futures::FutureExt;
 use js_sys::Reflect;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
+use futures::pin_mut;
 use web_sys::{
     MessageEvent, RtcDataChannel, RtcDataChannelInit, RtcDataChannelType, RtcIceCandidateInit,
     RtcPeerConnection, RtcPeerConnectionIceEvent, RtcSdpType, RtcSessionDescriptionInit,
     XmlHttpRequest, XmlHttpRequestResponseType,
 };
+use wasm_bindgen::__rt::core::future::Future;
+use async_channel::SendError;
 
 enum DispatcherEvent {
     ChannelOpen,
@@ -21,6 +25,8 @@ pub struct WebRTCClient {
     rtc_rx_incoming: async_channel::Receiver<Box<[u8]>>,
     rtc_tx_incoming: async_channel::Sender<Box<[u8]>>,
 
+    internal_rx: async_channel::Receiver<InternalMessage>,
+
     address: String,
     channel: RtcDataChannel,
     peer: RtcPeerConnection,
@@ -31,6 +37,7 @@ impl WebRTCClient {
         address: String,
         processor_reader: async_channel::Receiver<SignedMessage<Box<[u8]>>>,
         processor_sender: async_channel::Sender<Box<[u8]>>,
+        internal_rx: async_channel::Receiver<InternalMessage>,
     ) -> Self {
         let peer: RtcPeerConnection = RtcPeerConnection::new().unwrap();
         tracing::info!(
@@ -49,31 +56,40 @@ impl WebRTCClient {
             channel,
             processor_rx_outgoing: processor_reader,
             processor_tx_incoming: processor_sender,
+            internal_rx,
             rtc_tx_incoming,
             rtc_rx_incoming,
         }
     }
 }
 
-#[wasm_bindgen]
 impl WebRTCClient {
-    pub async fn run(self) {
+    pub fn close(&self) {
+        self.channel.close();
+    }
+    pub async fn run(&self) {
         self.connect().await;
         let incoming_rx = self.rtc_rx_incoming.clone();
         let processor_incoming_tx = self.processor_tx_incoming.clone();
 
-        let incoming = async move {
+        let incoming = async {
             tracing::info!("Incoming message processor started");
             loop {
                 match incoming_rx.recv().await {
                     Ok(message) => {
-                        processor_incoming_tx.send(message).await.unwrap();
+                        match processor_incoming_tx.send(message).await {
+                            Ok(_) => {}
+                            Err(_) => {
+                                tracing::info!("Failed to dispatch incoming message");
+                            }
+                        }
                     }
                     Err(_) => break,
                 }
             }
-        };
-        let outgoing = async move {
+        }.fuse();
+
+        let outgoing = async {
             tracing::info!("Outgoing message processor started");
             loop {
                 match self.processor_rx_outgoing.recv().await {
@@ -85,8 +101,15 @@ impl WebRTCClient {
                     _ => break,
                 }
             }
+        }.fuse();
+
+        pin_mut!(incoming, outgoing);
+
+        select! {
+          () = incoming => {},
+          () = outgoing => {},
+          complete => tracing::info!("Webrtc client shut down"),
         };
-        join!(incoming, outgoing);
     }
 
     async fn connect(&self) {

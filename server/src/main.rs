@@ -114,18 +114,19 @@ async fn main() {
         .init();
     tracing::info!("Starting up the game server.");
     tracing::info!("Starting up the Agones SDK.");
-    let mut sdk = agones::Sdk::new().unwrap();
+    let mut inner_sdk = agones::Sdk::new().unwrap();
+    let mut sdk = inner_sdk.clone();
     tokio::spawn(
         async move {
             loop {
-                match sdk.health() {
+                match inner_sdk.health() {
                     (s, Ok(_)) => {
                         tracing::info!("Health ping sent.");
-                        sdk = s;
+                        inner_sdk = s;
                     },
                     (s, Err(e)) => {
                         tracing::info!("Health ping failed to send.");
-                        sdk = s;
+                        inner_sdk = s;
                     }
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;
@@ -133,9 +134,16 @@ async fn main() {
         }
             .compat(),
     );
+    sdk.ready().unwrap();
+    let gameserver = sdk
+        .get_gameserver()
+        .unwrap();
+    let address = gameserver.status.as_ref().unwrap().address.clone();
+    let port = gameserver.status.as_ref().unwrap().ports.get(1).as_ref().unwrap().port;
+    tracing::info!("Creating public port: {}", format!("{}:{}", address, port));
     let data_port = "0.0.0.0:42424".parse().unwrap();
-    let public_port = "127.0.0.1:42424".parse().unwrap();
-    let session_port: SocketAddr = "[::]:8080".parse().unwrap();
+    let public_port = format!("{}:{}", address, port).parse().unwrap();
+    let session_port: SocketAddr = "[::]:8081".parse().unwrap();
 
     let mut rtc_server = RtcServer::new(data_port, public_port).await.unwrap();
 
@@ -208,11 +216,12 @@ async fn main() {
 
                     if let Ok(received) = received {
                         if !client_lookup.contains(&received.remote_addr) {
-                            tracing::info!("Received {:?}", &received.remote_addr);
+                            tracing::info!("Received new client {:?}", &received.remote_addr);
                             let id = multiplexer.register();
                             client_lookup.register(id, received.remote_addr);
                             internal_sender.send(InternalMessage::ClientSnapshot(client_lookup.ids().into_iter().map(|x| *x).collect())).await;
                         }
+                        tracing::info!("Received message from client {:?}", &received.remote_addr);
                         multiplexer.send_raw(Target::Client(*client_lookup.lookup_socket(&received.remote_addr).unwrap()), received.message.as_ref().into()).await;
                     }
                     Action::None
@@ -256,8 +265,9 @@ async fn main() {
             let clients: Vec<SocketAddr> =
                 rtc_server.connected_clients().map(|x| x.clone()).collect();
 
-            tracing::info!("Sending message {:?}", clients);
+
             if let Some(client) = client_lookup.lookup(packet.id) {
+                tracing::info!("Sending message {:?}", client);
                 if rtc_server.is_connected(client) {
                     rtc_server
                         .send(packet.message.as_ref(), MessageType::Binary, client)

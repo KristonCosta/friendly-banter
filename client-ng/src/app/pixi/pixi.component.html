@@ -1,4 +1,16 @@
 <p>pixi works!</p>
+<form (ngSubmit)="connect()">
+    <input
+      type="text"
+      placeholder="http://127.0.0.1:8080"
+      name="address"
+      [(ngModel)]="address"
+    />
+    <button type="submit">
+      Connect
+    </button>
+  </form>
+<button (click)="disconnect()">Disconnect</button>
 <div *ngFor="let message of messages">
 
     <h3>

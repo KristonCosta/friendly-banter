@@ -228,11 +228,14 @@ where
                 };
                 action
             };
+            let mut breakout = false;
             match action {
                 Action::DispatchBytes(message) => {
                     let mut packet = self.pool.acquire();
                     packet.extend(&message);
-                    self.incoming_packets.try_send(packet).unwrap();
+                    if let Err(err) = self.incoming_packets.try_send(packet) {
+                        tracing::info!("Can't keep up with incoming messages!");
+                    }
                 }
                 Action::EmitBytes(buf_bytes) => {
                     let mut bytes = Vec::with_capacity(buf_bytes.len());
@@ -274,7 +277,7 @@ where
                     }
                 },
                 Action::Error => {
-                    // panic!("Error in the message processor.");
+                    panic!("Error in the message processor.");
                 }
                 Action::Flush => {
                     self.turbulence_channels.flush::<ReliableMessage>();
@@ -282,8 +285,11 @@ where
                 }
                 Action::Shutdown => {
                     tracing::info!("Killing message processor");
-                    break;
+                    breakout = true;
                 }
+            }
+            if breakout {
+                break;
             }
         }
     }

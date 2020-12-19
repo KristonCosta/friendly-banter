@@ -246,6 +246,7 @@ impl Universe {
                 
             }
             self.client_tick().await;
+            continue;
             for (player, pos) in &self.players {
                 for (id, _) in &self.connected_clients {
                     self.bundle

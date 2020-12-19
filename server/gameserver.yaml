@@ -6,7 +6,7 @@ spec:
   ports:
     - name: session
       portPolicy: Dynamic
-      containerPort: 8080
+      containerPort: 8081
       protocol: TCP
     - name: rtc
       portPolicy: Dynamic
@@ -19,8 +19,8 @@ spec:
           imagePullPolicy: Never
           resources:
             requests:
-              memory: "32Mi"
-              cpu: "20m"
+              memory: "256Mi"
+              cpu: "250m"
             limits:
-              memory: "32Mi"
-              cpu: "20m"
+              memory: "512Mi"
+              cpu: "500m"

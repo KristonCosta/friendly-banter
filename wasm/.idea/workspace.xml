@@ -31,14 +31,20 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="aa62dde5-8631-4aaa-b1a5-ac1bf6a6951e" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/../../.gitmodules" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../../agones" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../../server/gameserver.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../server/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../server/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../server/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/Dockerfile" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../../server/fleet.yaml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../../server/gameserverallocation.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../.dockerignore" beforeDir="false" afterPath="$PROJECT_DIR$/../../.dockerignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../client-ng/src/app/app.module.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../../client-ng/src/app/app.module.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../client-ng/src/app/pixi/pixi.component.html" beforeDir="false" afterPath="$PROJECT_DIR$/../../client-ng/src/app/pixi/pixi.component.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../client-ng/src/app/pixi/pixi.component.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../../client-ng/src/app/pixi/pixi.component.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/processor.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/processor.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../common/src/processor.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../common/src/processor.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../server/gameserver.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/gameserver.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../server/src/game.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/src/game.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../server/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../server/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../wasm/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/../../wasm/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../wasm/src/client.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../wasm/src/client.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../wasm/src/processor.rs" beforeDir="false" afterPath="$PROJECT_DIR$/../../wasm/src/processor.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -67,6 +73,13 @@
     <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="org.rust.cargo.project.model.PROJECT_DISCOVERY" value="true" />
     <property name="settings.editor.selected.configurable" value="language.rust" />
+  </component>
+  <component name="RunManager">
+    <configuration default="true" type="GradleAppRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" PASS_PARENT_ENVS_2="true">
+      <method v="2">
+        <option name="com.jetbrains.cidr.cpp.gradle.execution.GradleNativeBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
   </component>
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
@@ -111,5 +124,21 @@
       <screen x="0" y="23" width="1920" height="1177" />
     </state>
     <state x="612" y="297" width="670" height="676" key="search.everywhere.popup/0.23.1920.1177@0.23.1920.1177" timestamp="1607174977470" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/client.rs</url>
+          <line>110</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/client.rs</url>
+          <line>94</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
