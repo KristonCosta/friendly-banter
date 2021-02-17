@@ -64,9 +64,11 @@ impl WebRTCClient {
 }
 
 impl WebRTCClient {
+
     pub fn close(&self) {
         self.channel.close();
     }
+
     pub async fn run(&self) {
         self.connect().await;
         let incoming_rx = self.rtc_rx_incoming.clone();

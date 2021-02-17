@@ -8,6 +8,10 @@ edition = "2018"
 name = "server"
 path = "src/main.rs"
 
+[features]
+clustered = ['agones']
+
+
 [dependencies]
 webrtc-unreliable = "0.5.0"
 tokio = { version = "0.3", features = ["full"] }
@@ -20,7 +24,7 @@ tokio-compat-02 = "0.1.2"
 futures-util = "0.3.7"
 rand = "0.7"
 ctrlc = "3.1.7"
-agones = { path = "../agones/sdks/rust", features = ["openssl"] }
+agones = { path = "../agones/sdks/rust", features = ["openssl"], optional = true }
 
 [dependencies.common]
 path = "common"

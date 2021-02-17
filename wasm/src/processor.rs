@@ -69,6 +69,10 @@ impl Processor {
     }
 
     pub fn connect(&mut self, url: String) {
+        if self.connected {
+            tracing::info!("Already connected please disconnect first");
+            return
+        }
         let (tx, rx) = async_channel::unbounded();
         let (reliable_tx, reliable_rx) = async_channel::unbounded();
         let (internal_tx, internal_rx) = async_channel::unbounded();
@@ -107,7 +111,7 @@ impl Processor {
             let reliable_dispatcher = async move {
                 loop {
                     for message in reliable_rx.recv().await {
-                        tracing::info!("Processor sending message {:?}", message);
+                        tracing::info!("Processor sending reliable message {:?}", message);
                         reliable_message_sender.send(message).await.unwrap();
                     }
                 }
@@ -147,7 +151,7 @@ impl Processor {
                 channel_number
             }
         );
-
+        self.connected = true;
     }
 
     pub fn disconnect(&mut self) {
@@ -166,6 +170,7 @@ impl Processor {
 
             }
         }
+        self.connected = false;
     }
 
     pub fn process_pending(&mut self) {
@@ -238,6 +243,10 @@ impl Processor {
     }
 
     pub fn click(&self, x: f32, y: f32) {
+        if !self.connected {
+            tracing::info!("Tried to send message but no connection exists!");
+            return;
+        }
         match self.connection_bundle.as_ref() {
             None => {
                 tracing::info!("Tried to send message but no connection exists!");
@@ -250,6 +259,10 @@ impl Processor {
     }
 
     pub fn send(&self, string: String) {
+        if !self.connected {
+            tracing::info!("Tried to send message but no connection exists!");
+            return;
+        }
         match self.connection_bundle.as_ref() {
             None => {
                 tracing::info!("Tried to send message but no connection exists!");

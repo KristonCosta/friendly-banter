@@ -56,7 +56,7 @@ RUN sed -i 's#src/main.rs#dummy.rs#' Cargo.toml
 RUN cargo build --release
 
 COPY server/ .
-RUN cargo install --path .
+RUN cargo install --features clustered --path .
 
 FROM debian:buster-slim
 RUN apt-get update && apt-get install -y libssl-dev && rm -rf /var/lib/apt/lists/*
